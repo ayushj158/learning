@@ -44,7 +44,7 @@ You can treat this as:
 
 ---
 
-# 🟦 2. JAVA VERSIONS & LANGUAGE EVOLUTION
+# 🟦 2. <span style="color:red">JAVA VERSIONS & LANGUAGE EVOLUTION</span>.
 
 * ☐ Java 8
 
@@ -79,8 +79,7 @@ You can treat this as:
 # 🟦 3. STRING & OBJECT INTERNALS (INTERVIEW FAVOURITES)
 
 * ☐ String immutability (why it exists)
-* ☐ String pool
-* ☐ Interning
+* ☐ String pool & Interning
 * ☐ `"abc"` vs `new String("abc")`
 * ☐ StringBuilder vs StringBuffer
 * ☐ String concatenation in loops
