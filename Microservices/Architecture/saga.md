@@ -210,14 +210,15 @@ Orchestrator Service
 
 #### Orchestrator Responsibilities
 
-✅ **Sends commands** → Expects responses
-✅ **Persists saga state** → Survives crashes
-✅ **Sets deadlines** → Detects silence
-✅ **Triggers compensation** → On explicit failure or timeout
+- ✅ **Sends commands** → Expects responses
+- ✅ **Persists saga state** → Survives crashes
+- ✅ **Sets deadlines** → Detects silence
+- ✅ **Triggers compensation** → On explicit failure or timeout
 
-❌ **Never blocks threads** → Deadlines in DB, not memory
-❌ **Never assumes services alive** → Expects failures
-❌ **Never waits indefinitely** → Always has timeout
+- ❌ **Never blocks threads** → Deadlines in DB, not memory
+- ❌ **Never assumes services alive** → Expects failures
+- ❌ **Never waits indefinitely** → Always has timeout
+
 
 #### Pros ✅
 
