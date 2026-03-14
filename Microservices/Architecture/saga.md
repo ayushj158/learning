@@ -1077,4 +1077,102 @@ NoSQL DBs (Cassandra, DynamoDB) often relax ACID for scalability — described b
 - **NewSQL (ACID + scale):** CockroachDB, Google Spanner
 ```
 
+# CAP Theorem
+
+CAP stands for **Consistency, Availability, and Partition Tolerance** — and the theorem states:
+
+> **A distributed system can only guarantee 2 out of these 3 properties at any given time.**
+
+---
+
+## The 3 Properties
+
+**Consistency (C)**
+Every read receives the most recent write — or an error. All nodes in the system see the same data at the same time. If you write `x = 5` on node A, any read from node B must also return `5`.
+
+> Note: This is *different* from the C in ACID. ACID consistency = data rules. CAP consistency = all nodes agree on the same data.
+
+**Availability (A)**
+Every request gets a response — always. The system never returns an error or times out, even if some nodes are down. However, the response may not be the most recent data.
+
+**Partition Tolerance (P)**
+The system keeps working even when network partitions occur — i.e., when nodes can't communicate with each other due to network failures.
+
+---
+
+## Why You Can Only Pick 2
+
+In any real distributed system, **network partitions are unavoidable** — hardware fails, packets drop, datacenters get split. So in practice, **P is non-negotiable**. You always need partition tolerance.
+
+That leaves you choosing between **C and A** when a partition happens:
+
+```
+Node A  ----network split----  Node B
+
+User writes x=5 to Node A.
+Node B hasn't received the update yet.
+
+Now a user reads from Node B. What do you do?
+```
+
+- **Choose Consistency** → return an error / block until nodes sync. User gets correct data or nothing.
+- **Choose Availability** → return Node B's stale data. User always gets a response, but it might be outdated.
+
+---
+
+## The 3 System Types
+
+**CP — Consistent + Partition Tolerant** (sacrifices Availability)
+During a partition, the system refuses to respond rather than return stale data. You'd rather go down than lie.
+
+Examples: HBase, Zookeeper, MongoDB (in certain configs)
+
+**AP — Available + Partition Tolerant** (sacrifices Consistency)
+During a partition, all nodes stay up and accept reads/writes, but data may be stale or diverge temporarily. Nodes sync up *eventually* — this is called **eventual consistency**.
+
+Examples: Cassandra, DynamoDB, CouchDB
+
+**CA — Consistent + Available** (sacrifices Partition Tolerance)
+Only possible if you assume the network never fails — which is only realistic on a single machine. In practice, no real distributed system is CA.
+
+Examples: Traditional RDBMS (PostgreSQL, MySQL) — but only when running on a single node.
+
+---
+
+## Real World Analogy
+
+Think of a Google Doc being edited by two people with bad internet.
+
+- **CP behaviour** → "You're offline, you can't edit right now." Locks you out to prevent conflict.
+- **AP behaviour** → "Go ahead and edit!" Both people edit independently, conflicts are resolved later when connection restores.
+
+---
+
+## CP vs AP — When to Choose Which
+
+| Situation | Choose |
+|---|---|
+| Banking, payments, inventory | **CP** — stale data = real money problems |
+| Social media feeds, likes, views | **AP** — slightly stale count is fine |
+| Flight seat booking | **CP** — can't double-sell a seat |
+| Shopping cart, product catalog | **AP** — availability matters more |
+| Healthcare records | **CP** — correctness is critical |
+| DNS, CDN, caching | **AP** — always-on matters more |
+
+---
+
+## CAP vs ACID
+
+| | CAP | ACID |
+|---|---|---|
+| **Domain** | Distributed systems | Single database transactions |
+| **C means** | All nodes see same data | Data rules/constraints hold |
+| **Core tension** | Consistency vs Availability | Correctness vs Performance |
+| **When relevant** | When you have multiple nodes | Within a single DB transaction |
+
+---
+
+## One-liner Summary
+
+> In a distributed system, when the network breaks, you must choose: **do you want correct data, or do you want a response?** You can't always have both.
 
