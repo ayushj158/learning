@@ -1075,7 +1075,7 @@ NoSQL DBs (Cassandra, DynamoDB) often relax ACID for scalability — described b
 - **ACID:** PostgreSQL, MySQL, Oracle, SQL Server
 - **Eventual consistency:** Cassandra, DynamoDB, CouchDB
 - **NewSQL (ACID + scale):** CockroachDB, Google Spanner
-```
+  
 
 # CAP Theorem
 
