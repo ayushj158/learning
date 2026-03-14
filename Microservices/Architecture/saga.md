@@ -14,6 +14,8 @@ It solves the problem: **How do we handle business workflows that span multiple 
 
 You **cannot** use [ACID transactions](https://github.com/ayushj158/learning/blob/main/Microservices/Architecture/saga.md#acid-transactions--revision-notes) across microservices.
 
+[CAP Theorem](https://github.com/ayushj158/learning/blob/main/Microservices/Architecture/saga.md#cap-theorem)
+
 **In banking systems:**
 - Each service owns its data
 - Failures are normal
