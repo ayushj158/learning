@@ -12,7 +12,7 @@ It solves the problem: **How do we handle business workflows that span multiple 
 
 ### The Problem
 
-You **cannot** use ACID transactions across microservices.
+You **cannot** use ACID transactions [] across microservices.
 
 **In banking systems:**
 - Each service owns its data
@@ -954,5 +954,126 @@ If you can answer these clearly, you're solid:
 | **Hybrid** | Mature systems | Best of both | More complex |
 
 **Choose based on business criticality, not architectural purity.**
+
+
+
+Here's your markdown — just copy and paste it:
+
+
+# ACID Transactions — Revision Notes
+
+## At a Glance
+
+| Property    | Core Idea                              | Problem it Solves                  |
+|-------------|----------------------------------------|------------------------------------|
+| Atomicity   | All or nothing                         | Incomplete writes on crash/failure |
+| Consistency | DB moves valid state → valid state     | Constraint violations mid-txn      |
+| Isolation   | Concurrent txns don't interfere        | Race conditions & dirty reads      |
+| Durability  | Committed data survives crashes        | Data loss after system failure     |
+
+---
+
+## A — Atomicity
+All operations in a transaction succeed together, or none are applied. On failure, DB rolls back completely — no partial state ever written.
+
+**Example:**
+```sql
+BEGIN TRANSACTION;
+  UPDATE accounts SET balance = balance - 500 WHERE id = 'Alice';
+  UPDATE accounts SET balance = balance + 500 WHERE id = 'Bob';
+COMMIT;
+-- If second UPDATE fails → both rolled back. Alice keeps her $500.
+```
+
+---
+
+## C — Consistency
+Every transaction takes the DB from one valid state to another. No constraint is ever violated mid-way.
+
+- Consistency is the **goal** — Atomicity, Isolation, Durability are the tools
+- The DB enforces rules YOU define: CHECK, FOREIGN KEY, UNIQUE, NOT NULL
+
+**Example:**
+```sql
+ALTER TABLE accounts ADD CONSTRAINT no_overdraft CHECK (balance >= 0);
+-- Any txn that violates this is fully rolled back
+```
+
+---
+
+## I — Isolation
+Concurrent transactions execute as if sequential. Intermediate states are invisible to other transactions.
+
+### 3 Classic Problems Without Isolation
+
+**1. Dirty Read** — reading uncommitted data that may roll back
+```
+T1: UPDATE balance = 1000  (not committed)
+T2: SELECT balance  →  reads 1000  ← WRONG
+T1: ROLLBACK  →  balance never changed
+```
+
+**2. Non-Repeatable Read** — same query returns different values within one txn
+```
+T1: SELECT balance  →  500
+T2: UPDATE balance = 800; COMMIT
+T1: SELECT balance  →  800  ← Different result, same txn!
+```
+
+**3. Phantom Read** — re-running a query returns different rows
+```
+T1: SELECT * WHERE amount > 100  →  5 rows
+T2: INSERT row with amount=200; COMMIT
+T1: SELECT * WHERE amount > 100  →  6 rows  ← Phantom!
+```
+
+### Isolation Levels
+
+| Level            | Dirty Read | Non-Rep. Read | Phantom Read | Default In          |
+|------------------|------------|---------------|--------------|---------------------|
+| Read Uncommitted | ✅ Possible | ✅ Possible    | ✅ Possible   | —                   |
+| Read Committed   | ❌ Prevented| ✅ Possible    | ✅ Possible   | PostgreSQL, Oracle  |
+| Repeatable Read  | ❌ Prevented| ❌ Prevented   | ✅ Possible   | MySQL               |
+| Serializable     | ❌ Prevented| ❌ Prevented   | ❌ Prevented  | Strictest, slowest  |
+
+---
+
+## D — Durability
+Once committed, data is permanent — even if system crashes immediately after.
+
+- Achieved via **Write-Ahead Logs (WAL)** — changes logged to disk before confirming
+- On crash recovery, DB replays the log to restore committed state
+- COMMIT = a contract that data is safe forever
+
+---
+
+## Consistency vs Isolation — Key Difference
+
+|                   | Consistency                      | Isolation                          |
+|-------------------|----------------------------------|------------------------------------|
+| Concerned with    | Data rules & constraints         | Concurrent transactions            |
+| Question          | Is the data valid?               | Can transactions see each other?   |
+| Enforced by       | Constraints, triggers, app logic | Locks, MVCC, concurrency control   |
+| Prevents          | Invalid/corrupt data states      | Race conditions between txns       |
+
+> **One-liner:** Consistency = *what* data looks like. Isolation = *when* changes become visible to others.
+
+---
+
+## Memory Hooks
+- 💣 **Atomicity** — all goes off, or nothing does
+- 📏 **Consistency** — rules respected before AND after
+- 🔒 **Isolation** — each txn in its own bubble
+- 🪨 **Durability** — COMMIT means written forever
+
+---
+
+## ACID vs NoSQL
+NoSQL DBs (Cassandra, DynamoDB) often relax ACID for scalability — described by the **CAP Theorem** (pick 2 of: Consistency, Availability, Partition Tolerance).
+
+- **ACID:** PostgreSQL, MySQL, Oracle, SQL Server
+- **Eventual consistency:** Cassandra, DynamoDB, CouchDB
+- **NewSQL (ACID + scale):** CockroachDB, Google Spanner
+```
 
 
