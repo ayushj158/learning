@@ -4,15 +4,15 @@ Let's go! I'll guide you through Days 1–3 systematically — teaching you the 
 
 ## 📅 Days 1–3 Curriculum
 
-🔵 RECAP
+🔵 [RECAP](https://github.com/ayushj158/learning/blob/main/foundations.md#-days-13-complete-full-pillar-summary)
 
 
 We'll cover **4 pillars**:
 
-1. 🔵 CAP Theorem
-2. 🟡 Caching Strategies
-3. 🟢 Database Choices
-4. 🔴 Load Balancing
+1. 🔵 [CAP Theorem](https://github.com/ayushj158/learning/blob/main/foundations.md#-pillar-1--cap-theorem)
+2. 🟡 [Caching Strategies](https://github.com/ayushj158/learning/blob/main/foundations.md#-pillar-2--caching-strategies)
+3. 🟢 [Database Choices](https://github.com/ayushj158/learning/blob/main/foundations.md#-pillar-3--database-choices)
+4. 🔴 [Load Balancing](https://github.com/ayushj158/learning/blob/main/foundations.md#-pillar-4--load-balancing)
 
 ---
 
