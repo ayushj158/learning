@@ -1,13 +1,22 @@
+# 
+🏗️ Day 4 — [Microservices Patterns](https://github.com/ayushj158/learning/blob/main/sytem_design_and_arch/microservices_patterns.md#%EF%B8%8F-day-4--microservices-patterns)
+🛡️ Day 5 — [Resilience Patterns](https://github.com/ayushj158/learning/blob/main/sytem_design_and_arch/microservices_patterns.md#%EF%B8%8F-day-5--resilience-patterns)
+📨 Day 6 — [Kafka Deep Dive](https://github.com/ayushj158/learning/blob/main/sytem_design_and_arch/microservices_patterns.md#-day-6--kafka-deep-dive)
+
+
+
+
 # 🏗️ Day 4 — Microservices Patterns
 
 At EM level in a tier-1 GCC interview, microservices questions go **way beyond "split your monolith into services."** They expect you to reason about **distributed transaction patterns, data consistency, event-driven architecture and real FS implementation tradeoffs.**
 
 Day 4 covers **4 critical patterns:**
 
-1. 🔵 [**Saga Pattern**]() — distributed transactions without 2PC
-2. 🟡 **CQRS** — Command Query Responsibility Segregation
-3. 🟢 **Event Sourcing** — immutable event log as source of truth
-4. 🔴 **Strangler Fig** — migrating monoliths safely
+1. 🔵 [**Saga Pattern**](https://github.com/ayushj158/learning/blob/main/sytem_design_and_arch/microservices_patterns.md#-pattern-1--saga-pattern) — distributed transactions without 2PC
+2. 🟡 [**CQRS**](https://github.com/ayushj158/learning/blob/main/sytem_design_and_arch/microservices_patterns.md#-pattern-2--cqrs) — Command Query Responsibility Segregation
+3. 🟢 [**Event Sourcing**](https://github.com/ayushj158/learning/blob/main/sytem_design_and_arch/microservices_patterns.md#-pattern-2--cqrs) — immutable event log as source of truth
+4. 🔴 [**Strangler Fig**](https://github.com/ayushj158/learning/blob/main/sytem_design_and_arch/microservices_patterns.md#-pattern-2--cqrs) — migrating monoliths safely
+5. [**Outbox Pattern**](https://github.com/ayushj158/learning/blob/main/sytem_design_and_arch/microservices_patterns.md#%EF%B8%8F-day-4--microservices-patterns)
 
 ---
 
@@ -1169,11 +1178,11 @@ At EM level in a tier-1 GCC interview, resilience questions test whether you've 
 
 Day 5 covers **5 critical patterns:**
 
-1. 🔵 **Circuit Breaker** — stop calling failing services
-2. 🟡 **Retry + Exponential Backoff** — smart retries
-3. 🟢 **Bulkhead** — isolate failures
-4. 🔴 **Timeout** — don't wait forever
-5. 🟣 **Fallback & Graceful Degradation** — serve something when you can't serve everything
+1. 🔵 [**Circuit Breaker**](https://github.com/ayushj158/learning/blob/main/sytem_design_and_arch/microservices_patterns.md#-pattern-1--circuit-breaker) — stop calling failing services
+2. 🟡 [**Retry + Exponential Backoff**](https://github.com/ayushj158/learning/blob/main/sytem_design_and_arch/microservices_patterns.md#-pattern-1--circuit-breaker) — smart retries
+3. 🟢 [**Bulkhead**](https://github.com/ayushj158/learning/blob/main/sytem_design_and_arch/microservices_patterns.md#-pattern-1--circuit-breaker) — isolate failures
+4. 🔴 [**Timeout**](https://github.com/ayushj158/learning/blob/main/sytem_design_and_arch/microservices_patterns.md#-pattern-1--circuit-breaker) — don't wait forever
+5. 🟣 [**Fallback & Graceful Degradation**](https://github.com/ayushj158/learning/blob/main/sytem_design_and_arch/microservices_patterns.md#-pattern-1--circuit-breaker) — serve something when you can't serve everything
 
 ---
 
