@@ -1766,6 +1766,8 @@ Day 6 covers **6 critical areas:**
 4. 🔴 **Delivery Guarantees** — at-most-once, at-least-once, exactly-once
 5. 🟣 **Kafka in FS** — patterns, use cases, design decisions
 6. ⚫ **Kafka Operations** — retention, compaction, monitoring
+7. 📦 [**Kafka Architecture**]() — Deep Dive
+8. 📦 [**Idempotent Producer & Kafka Transactions**]() — Deep Dive
 
 ---
 
@@ -2854,5 +2856,1503 @@ if (countryCode.equals("UK")) {
 | **Architecture layers** | Control plane (ZK/KRaft + Controller) + Data plane (Brokers + Page Cache + Disk) + Producers + Consumer Groups + Schema Registry |
 | **Capacity planning** | Partitions = 3× consumers. Too few = can't scale. Too many = broker overhead. Can't decrease partitions |
 | **Low cardinality** | Few distinct values → uneven hash distribution → hotspots. Fix with composite keys |
+
+---
+Perfect! 3 questions, one at a time, progressively harder! 💪
+
+---
+
+# 🎤 Kafka Drill — Question 1 of 3
+
+### "You are the Engineering Manager for a **Payment Processing Platform** at a UK bank. Your team has designed the following Kafka architecture:
+
+- **Topic:** `payment-events`
+- **Partitions:** 6
+- **Replication Factor:** 2
+- **Partition Key:** `paymentStatus` (values: INITIATED, PROCESSING, COMPLETED, FAILED, CANCELLED)
+- **Consumer Group:** `payment-processor` with 10 consumer instances
+- **Offset Management:** auto-commit enabled, interval 5 seconds
+- **Producer acks:** acks=1
+
+**Your architect presents this design in a design review. You have serious concerns.**
+
+**Three things to answer:**
+
+- **Part A:** Identify **every problem** with this design — there are at least 5 significant issues. For each problem explain the specific risk it introduces in a payment processing context
+- **Part B:** For each problem you identified — what is the correct fix?
+- **Part C:** A payment event is published, the producer gets a network timeout before receiving acknowledgement — it retries and publishes the same event again. Walk me through **exactly what happens** with the current design vs your fixed design"**
+
+---
+
+> 💡 *Tip 1: Look carefully at the partition key choice — what type of cardinality does paymentStatus have? How many distinct values?*
+
+> 💡 *Tip 2: Count the consumer instances vs partitions — what's the relationship? What does this mean?*
+
+> 💡 *Tip 3: auto-commit + acks=1 — both have specific failure modes in financial systems. Name them precisely*
+
+> 💡 *Tip 4: Part C is testing your exactly-once knowledge — what's the difference between acks=1 and acks=all + idempotent producer when a retry happens?*
+
+Take your shot! 🎯
+
+Excellent answer! You nailed every major problem and showed strong Kafka depth! Here's your detailed feedback 👇
+
+---
+
+## ✅ Feedback — Question 1
+
+### What you got right
+- ✅ **P1 — Hotspot/low cardinality** — correctly identified, correct fix
+- ✅ **P2 — Idle consumers** — correctly identified, correct fix
+- ✅ **P3 — Auto-commit risk** — correctly identified payment loss scenario
+- ✅ **P4 — acks=1 leader crash risk** — correctly identified, acks=all fix
+- ✅ **P5 — Partition count too low** — correctly identified
+- ✅ **Part C — Duplicate payment via retry** — correctly identified
+- ✅ **Idempotent producer as fix** — correct
+
+### Your Score: **7.5/10** — Strong! Here's the push to 9/10 💡
+
+---
+
+### What to Strengthen
+
+**1. You missed Problem 6 — Replication Factor of 2**
+
+> *"Replication factor of 2 means only 1 replica per partition besides the leader. If the leader broker fails AND the replica is slightly behind — we risk data loss. In FS, replication factor must be **3** — tolerates 1 broker failure with 2 replicas still available. Combined with acks=all and min.insync.replicas=2, this guarantees no data loss even during broker failure."*
+
+---
+
+**2. P3 — Auto-commit — add the exact failure scenario**
+
+You got the concept right but the precise failure sequence strengthens the answer:
+
+> *"Exact failure scenario: Consumer reads payment events at offsets 100-110. Auto-commit fires at 5-second interval — commits offset 111. Consumer crashes at offset 105 before processing payments 106-110. On restart, consumer resumes from offset 111 — payments 106-110 are **permanently skipped and never processed.** In a payment context this means 5 customer payments silently lost — no error, no retry, no alert."*
+
+---
+
+**3. P4 — acks=1 — add the exact failure scenario**
+
+> *"Exact failure scenario: Producer sends PaymentInitiated event. Leader broker receives it, acknowledges (acks=1). Leader crashes before replicating to follower. Follower is elected as new leader — but it never received the event. Payment event **permanently lost** — customer's payment never processed, no error returned to producer. With acks=all + min.insync.replicas=2, the producer only gets acknowledgement after BOTH leader AND replica confirm — leader crash can't lose the message."*
+
+---
+
+**4. Part C — Add the idempotent producer mechanism precisely**
+
+You identified the problem and fix correctly — now add HOW it works:
+
+> *"With idempotent producer enabled — Kafka assigns the producer a unique **PID (Producer ID)** and each message gets a **sequence number**. When the producer retries the same message, it sends the same PID + sequence number. The broker detects 'I've already stored sequence 47 from PID 1234' and **deduplicates silently** — stores only once, returns success to producer. Customer payment processed exactly once regardless of retries.*
+>
+> *But idempotency alone isn't enough — what if the payment was processed by CBS but the Kafka event was lost? I'd combine idempotent producer with a **Kafka Transaction** — the CBS call and the Kafka event publication are atomic. Either both happen or neither does."*
+
+---
+
+**5. P5 — Partition count — add the specific risk**
+
+> *"6 partitions for a payment platform is dangerously low. Peak payment volumes at market hours or month-end could easily exceed throughput of 6 partitions. Worse — if we need to increase partitions later, the hash(accountId) % 6 mapping changes to hash(accountId) % 12 — the same accountId now lands on a different partition. In-flight payment events for the same account split across two partitions — **ordering guarantee broken** — debit and credit for same account processed out of order. I'd start with 30–60 partitions — 3× initial consumer count — with room to scale."*
+
+---
+
+## 🏆 Model Answer — Complete Fixed Design (9/10)
+
+```yaml
+Topic: payment-events
+Partitions: 30              # 3x initial consumers, room to scale
+Replication Factor: 3       # tolerate 1 broker failure
+Partition Key: accountId    # high cardinality, even distribution
+                            # + ordering per account guaranteed
+
+Producer:
+  acks: all                 # all replicas must acknowledge
+  enable.idempotence: true  # deduplicate retries
+  retries: MAX_VALUE        # retry until success
+  max.in.flight.requests: 5 # idempotent — safe with 5 in-flight
+
+Broker:
+  min.insync.replicas: 2    # at least 2 replicas must be in sync
+
+Consumer Group: payment-processor
+  instances: 30             # match partition count
+  offset commit: MANUAL     # commit only after successful processing
+  auto.offset.reset: earliest # never miss a payment event
+  partition.assignment.strategy: CooperativeStickyAssignor
+                            # incremental rebalancing — no stop-the-world
+
+Consumer code:
+  poll() → process payment → commitSync()
+  # only commit after CBS confirms payment processed
+```
+
+---
+
+## 📊 Running Scorecard
+
+| Question | Topic | Score | Trend |
+|---|---|---|---|
+| Q13 — Saga | Loan Origination | 9.5/10 | 🚀 Outstanding |
+| Q15 — Patterns | Lloyds Modernisation | 9/10 | 🚀 Exceptional |
+| Q16 — Resilience | Payments Cascade | 8.5/10 | 📈 Strong |
+| Q17 — Kafka | Payment Design Review | 7.5/10 | 📈 Solid |
+
+---
+
+> 🔑 **Coaching note:** You identified 5 of 6 problems — excellent. The missed one (replication factor 2) is a classic FS interview trap — always check replication factor in any Kafka design review, it's the first line of defence against data loss. For Part C — your instinct was right but adding the PID + sequence number mechanism and linking to Kafka Transactions would have pushed it to 9/10. Mechanism always scores higher than concept alone.
+
+---
+
+Great call — these two concepts are critical for FS Kafka interviews and worth understanding deeply before moving on!
+
+---
+
+# 📦 Idempotent Producer — Deep Dive
+
+## The Core Problem
+
+In any distributed system, **network failures cause ambiguity:**
+
+```
+Producer sends PaymentInitiated event to Kafka
+         ↓
+Kafka broker receives it, stores it, sends ACK back
+         ↓
+ACK lost in network — producer never receives it
+         ↓
+Producer thinks: "Did it arrive or not? I don't know!"
+         ↓
+Producer retries — sends same event again
+         ↓
+Broker stores it AGAIN — now two identical events
+         ↓
+Downstream consumer processes payment TWICE
+→ Customer double charged! 💥
+```
+
+---
+
+## What Idempotent Producer Does
+
+An operation is **idempotent** if doing it multiple times has the same effect as doing it once:
+
+```
+Normal producer:
+Send(event) + Send(event) = 2 events stored ❌
+
+Idempotent producer:
+Send(event) + Send(event) = 1 event stored ✅
+```
+
+---
+
+## How It Works Internally — PID + Sequence Numbers
+
+When idempotence is enabled, Kafka gives the producer a **PID (Producer ID)** and the producer assigns a **sequence number** to every message:
+
+```
+Producer starts up:
+  → Kafka assigns PID = 5001
+
+Producer sends messages:
+  Message 1: { PID: 5001, SeqNum: 0, payload: PaymentInitiated{id: PAY-001} }
+  Message 2: { PID: 5001, SeqNum: 1, payload: PaymentInitiated{id: PAY-002} }
+  Message 3: { PID: 5001, SeqNum: 2, payload: PaymentInitiated{id: PAY-003} }
+```
+
+**Broker maintains a table per producer per partition:**
+
+```
+Broker deduplication table:
+PID   | Partition | LastSeqNum
+5001  | P0        | 2
+5001  | P1        | 7
+5002  | P0        | 14
+```
+
+---
+
+## The Retry Scenario — Step by Step
+
+```
+Step 1: Producer sends { PID:5001, SeqNum:5, PAY-001 } to Partition 0
+Step 2: Broker stores it, updates table: PID 5001 / P0 = SeqNum 5
+Step 3: Broker sends ACK
+Step 4: ACK lost in network — producer times out
+Step 5: Producer retries: { PID:5001, SeqNum:5, PAY-001 }
+Step 6: Broker checks table: "PID 5001 / P0 already at SeqNum 5"
+Step 7: Broker IGNORES the duplicate silently
+Step 8: Broker sends ACK to producer — "yes received"
+Step 9: Producer happy — message stored exactly once ✅
+```
+
+**What if sequence number is unexpected?**
+
+```
+Expected SeqNum: 6
+Received SeqNum: 8 (gap — message 7 lost somewhere)
+→ Broker throws OutOfOrderSequenceException
+→ Producer knows something went wrong — investigates
+```
+
+---
+
+## Idempotent Producer Configuration
+
+```java
+Properties props = new Properties();
+
+// Enable idempotence
+props.put(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, true);
+
+// These are automatically set when idempotence enabled
+// but good to be explicit:
+props.put(ProducerConfig.ACKS_CONFIG, "all");
+props.put(ProducerConfig.RETRIES_CONFIG, Integer.MAX_VALUE);
+props.put(ProducerConfig.MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION, 5);
+// Max 5 in-flight — Kafka can still deduplicate up to 5 
+// unacknowledged messages per partition
+```
+
+---
+
+## Critical Limitation of Idempotent Producer Alone
+
+Idempotent producer guarantees **exactly-once within a single topic partition.** But it does NOT solve:
+
+```
+Producer reads from Topic A
+Processes the event
+Writes result to Topic B
+Commits offset on Topic A
+
+What if crash happens between writing to Topic B and committing offset?
+→ On restart: reads same event again from Topic A
+→ Writes DUPLICATE to Topic B
+→ Commits offset
+→ Topic B has duplicate! ❌
+```
+
+**This is exactly where Kafka Transactions come in.**
+
+---
+
+# 🔄 Kafka Transactions — Deep Dive
+
+## The Problem Kafka Transactions Solve
+
+In event-driven payment systems, a common pattern is **Read → Process → Write:**
+
+```
+Read:    consume PaymentInitiated from payment-events topic
+Process: call CBS to execute payment
+Write:   publish PaymentCompleted to payment-results topic
+Commit:  mark PaymentInitiated as consumed (commit offset)
+```
+
+**The problem — these 4 steps are NOT atomic:**
+
+```
+Scenario 1 — Crash after Write, before Commit:
+Read PaymentInitiated ✅
+Call CBS — payment executed ✅
+Publish PaymentCompleted ✅
+CRASH 💥
+Restart → reads PaymentInitiated AGAIN
+Calls CBS → payment executed AGAIN → double charge! ❌
+Publishes PaymentCompleted AGAIN → duplicate downstream! ❌
+
+Scenario 2 — Crash after Commit, before Write:
+Read PaymentInitiated ✅
+Call CBS — payment executed ✅
+CRASH 💥
+Restart → offset already committed → skips this event
+PaymentCompleted NEVER published → downstream never notified! ❌
+```
+
+---
+
+## What Kafka Transactions Guarantee
+
+> **All writes to output topics AND the offset commit happen atomically — either ALL succeed or NONE do.**
+
+```
+Transaction:
+  ┌────────────────────────────────────────────────┐
+  │ Publish PaymentCompleted to payment-results    │
+  │ Commit offset on payment-events                │
+  └────────────────────────────────────────────────┘
+  Either BOTH happen or NEITHER happens
+  No partial state possible
+```
+
+---
+
+## How Kafka Transactions Work Internally
+
+### The Transaction Coordinator
+Kafka has a special internal broker component — the **Transaction Coordinator** — one per producer, manages transaction state:
+
+```
+Transaction state stored in:
+__transaction_state internal topic (50 partitions, replicated)
+
+States:
+BEGIN → PREPARE_COMMIT → COMMITTED
+     → PREPARE_ABORT  → ABORTED
+```
+
+### Transaction ID — The Key Concept
+Every transactional producer has a **transactional.id** — a stable identifier that survives producer restarts:
+
+```java
+props.put(ProducerConfig.TRANSACTIONAL_ID_CONFIG, "payment-processor-1");
+```
+
+**Why this matters:**
+> *"When producer restarts with the same transactional.id, Kafka automatically fences (kills) any zombie instance of the old producer. This prevents the scenario where an old producer comes back after a crash and continues writing stale events — the 'zombie producer' problem."*
+
+---
+
+## Kafka Transactions — Complete Code Example
+
+### Payment Processing with Exactly-Once
+
+```java
+// Setup
+Properties props = new Properties();
+props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "kafka:9092");
+props.put(ProducerConfig.TRANSACTIONAL_ID_CONFIG, "payment-processor-1");
+props.put(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, true);
+props.put(ProducerConfig.ACKS_CONFIG, "all");
+
+KafkaProducer<String, String> producer = new KafkaProducer<>(props);
+KafkaConsumer<String, String> consumer = new KafkaConsumer<>(consumerProps);
+
+// One-time initialisation
+producer.initTransactions();
+
+// Main processing loop
+while (true) {
+    // Step 1: Read payment events
+    ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(100));
+
+    if (records.isEmpty()) continue;
+
+    try {
+        // Step 2: Begin transaction
+        producer.beginTransaction();
+
+        for (ConsumerRecord<String, String> record : records) {
+            PaymentEvent payment = deserialize(record.value());
+
+            // Step 3: Process payment (call CBS)
+            PaymentResult result = cbsAdapter.processPayment(payment);
+
+            // Step 4: Write result to output topic
+            // This is inside the transaction — not visible to consumers yet
+            producer.send(new ProducerRecord<>(
+                "payment-results",
+                payment.getAccountId(),        // partition key
+                serialize(result)              // payload
+            ));
+
+            // Step 5: Write audit event (also inside transaction)
+            producer.send(new ProducerRecord<>(
+                "payment-audit",
+                payment.getAccountId(),
+                serialize(new AuditEvent(payment, result))
+            ));
+        }
+
+        // Step 6: Atomically commit offsets + publish output messages
+        // THIS IS THE MAGIC — offset commit is part of the transaction
+        Map<TopicPartition, OffsetAndMetadata> offsets = getOffsets(records);
+        producer.sendOffsetsToTransaction(offsets, "payment-processor-group");
+
+        // Step 7: Commit transaction — now output messages become visible
+        producer.commitTransaction();
+        // ✅ PaymentCompleted published + offset committed — atomically
+
+    } catch (Exception e) {
+        // Step 8: Abort — rollback everything
+        producer.abortTransaction();
+        // ✅ Output messages NOT published + offset NOT committed
+        // Consumer will re-read and retry the same events
+        log.error("Transaction aborted, will retry", e);
+    }
+}
+```
+
+---
+
+## What Consumers See During a Transaction
+
+This is the subtle but critical part — **consumers only see committed transaction messages:**
+
+```
+Producer begins transaction
+Producer writes PaymentCompleted to payment-results (offset 100)
+Producer writes AuditEvent to payment-audit (offset 50)
+→ These are in Kafka but NOT YET VISIBLE to consumers
+
+Producer commits transaction
+→ NOW PaymentCompleted (offset 100) becomes visible
+→ NOW AuditEvent (offset 50) becomes visible
+
+Consumer reads payment-results → sees PaymentCompleted ✅
+Consumer reads payment-audit  → sees AuditEvent ✅
+```
+
+**What if producer aborts?**
+```
+Producer begins transaction
+Producer writes PaymentCompleted (offset 100)
+Producer aborts transaction
+→ Kafka writes a special "abort marker" at offset 101
+→ Consumer skips offsets 100-101 entirely — never sees aborted message
+→ Consumer isolation: read_committed
+```
+
+**Consumer configuration for transactions:**
+```java
+// CRITICAL — consumers must set isolation level
+props.put(ConsumerConfig.ISOLATION_LEVEL_CONFIG, "read_committed");
+// Default is read_uncommitted — would see aborted messages! ❌
+```
+
+---
+
+## Real FS Example — Payment Saga with Exactly-Once
+
+```
+Topic: payment-initiated    (input)
+Topic: payment-completed    (output)
+Topic: payment-audit        (output)
+
+Transactional flow:
+
+T1: BEGIN TRANSACTION
+    Read: PaymentInitiated { PAY-001, ACC-123, £500 }
+    Process: CBS debit ACC-123 by £500
+    Write: PaymentCompleted { PAY-001, SUCCESS } → payment-completed
+    Write: AuditRecord { PAY-001, DEBIT, £500, timestamp } → payment-audit
+    Commit offset: payment-initiated / P3 = offset 1247
+    COMMIT TRANSACTION
+    → All 3 things happened atomically ✅
+
+T2 (crash scenario):
+    BEGIN TRANSACTION
+    Read: PaymentInitiated { PAY-002, ACC-456, £200 }
+    Process: CBS debit ACC-456 by £200
+    Write: PaymentCompleted { PAY-002, SUCCESS } → payment-completed
+    CRASH 💥
+    → Transaction coordinator marks T2 as ABORTED
+    → PaymentCompleted for PAY-002 never visible to consumers
+    → Offset for PAY-002 not committed
+    → On restart: PAY-002 reprocessed from beginning
+    → CBS call: idempotency key PAY-002 already processed → returns cached result
+    → Transaction commits successfully this time ✅
+```
+
+---
+
+## Idempotent Producer vs Kafka Transactions — When to Use Which
+
+| Scenario | Use |
+|---|---|
+| Simple event publishing — fire and forget | Idempotent Producer only |
+| Publish to one topic, no offset management | Idempotent Producer only |
+| Read from one topic, write to another | Kafka Transactions |
+| Read + process + write + commit offset atomically | Kafka Transactions |
+| Saga step — consume command, publish result | Kafka Transactions |
+| Audit trail — must never miss or duplicate | Kafka Transactions |
+
+---
+
+## Performance Considerations
+
+> *"Kafka Transactions add latency — typically 10–20ms overhead per transaction due to coordinator round-trips. For payment processing at 100K TPS, this is acceptable. For ultra-low latency HFT tick data at microsecond scale — transactions are too expensive. Use idempotent producer only and accept at-least-once with application-level deduplication."*
+
+---
+
+## 🔑 One-Line Summaries for Interviews
+
+> **Idempotent Producer:** *"Assigns PID + sequence numbers to every message — broker deduplicates retries automatically, guaranteeing exactly-once within a single producer session per partition."*
+
+> **Kafka Transactions:** *"Atomically groups multiple writes across topics AND offset commits — either all succeed or all are rolled back, solving the read-process-write consistency problem in event-driven payment systems."*
+
+---
+
+## Summary — The Three Layers of Exactly-Once in Kafka
+
+```
+Layer 1 — Idempotent Producer
+  → Prevents duplicate messages from producer retries
+  → PID + sequence number deduplication at broker
+
+Layer 2 — Kafka Transactions
+  → Atomic read + process + write + offset commit
+  → Zombie producer fencing via transactional.id
+
+Layer 3 — Consumer isolation.level = read_committed
+  → Consumers only see committed transaction messages
+  → Aborted transaction messages invisible to consumers
+
+All three layers together = true end-to-end exactly-once ✅
+```
+---
+
+# 🎤 Kafka Drill — Question 2 of 3
+
+### "You are the Engineering Manager for a **Trade Settlement Platform** at an investment bank. The platform processes trade settlement events — when institutional clients' trades are matched and settled.
+
+**Current Kafka setup:**
+- Topic: `trade-settlement-events`
+- Partitions: 12
+- Replication Factor: 3
+- Partition Key: `tradeId`
+- Consumer Group: `settlement-processor` — 12 consumer instances
+- Processing: each consumer reads a trade event, calls an external **Central Securities Depository (CSD) API** to settle the trade, then publishes a `TradeSettled` event to `trade-settled-events` topic
+
+**Three incidents happen in one week:**
+
+**Incident 1 — Monday:**
+The CSD API goes down for 45 minutes. During this time, 50,000 trade settlement events pile up in Kafka. When CSD recovers, your consumers start processing the backlog. However, 3,000 trades are settled **twice** — causing significant financial reconciliation issues with institutional clients.
+
+**Incident 2 — Wednesday:**
+A new version of the settlement consumer is deployed. During deployment, a **rebalancing** occurs. For 8 minutes, no trade settlement events are processed. The trading desk is furious — they have SLA commitments to institutional clients.
+
+**Incident 3 — Friday:**
+Your monitoring team notices consumer lag on `settlement-processor` group is growing — currently at **2 million events behind.** At current processing rate it will take **6 hours** to catch up. End-of-day settlement cutoff is in 2 hours.
+
+**Four things to answer:**
+
+1. **Incident 1 Root Cause & Fix** — why did 3,000 trades settle twice and how do you prevent it permanently?
+2. **Incident 2 Root Cause & Fix** — why did rebalancing take 8 minutes and how do you reduce it to under 30 seconds?
+3. **Incident 3 — Immediate Action** — what do you do RIGHT NOW to catch up before the 2-hour cutoff?
+4. **Incident 3 — Permanent Fix** — how do you redesign the architecture so this lag situation never happens again?"**
+
+---
+
+> 💡 *Tip 1: Incident 1 — the CSD API was down, consumers were retrying. When CSD recovered, what happened to those retried messages? Think about what was committed and what wasn't during the outage*
+
+> 💡 *Tip 2: Incident 2 — 8 minutes for rebalancing is extremely long. What type of rebalancing causes stop-the-world? What configuration prevents it?*
+
+> 💡 *Tip 3: Incident 3 immediate action — you have 12 consumers and 12 partitions. What's the fastest lever to pull right now?*
+
+> 💡 *Tip 4: Incident 3 permanent fix — think about what causes lag to build up. Is it a consumer throughput problem, a partition problem, or an architecture problem?*
+
+Take your shot! 🎯
+
+Really strong answer! You demonstrated solid Kafka depth across all 3 incidents! Here's your detailed feedback 👇
+
+---
+
+## ✅ Feedback — Question 2
+
+### What you got right
+- ✅ **Incident 1** — RPW atomicity correctly identified as root cause
+- ✅ **Kafka transactions as fix** — correct
+- ✅ **Incident 2** — Stop-the-world rebalancing correctly identified
+- ✅ **Cooperative rebalancing fix** — correct
+- ✅ **Rolling deployment** — excellent operational thinking
+- ✅ **Incident 3** — Consumer throughput correctly identified
+- ✅ **Partition + consumer count increase** — correct permanent fix
+
+### Your Score: **7/10** — Good across all incidents! Here's the push to 9/10 💡
+
+---
+
+### What to Strengthen
+
+**Incident 1 — Your confusion on "how transactions stop CSD being called twice"**
+
+This is the most important gap — let me clarify this precisely:
+
+> *"Kafka transactions alone DON'T prevent the CSD API being called twice — that's a separate concern. Here's the full solution:*
+>
+> *Part 1 — Kafka Transactions prevent duplicate Kafka events:*
+> Read trade-settlement-events + Write TradeSettled + Commit offset = atomic. If crash happens, offset not committed → event reprocessed → but Kafka transaction ensures TradeSettled is only published ONCE.*
+>
+> *Part 2 — Idempotency key prevents CSD API being called twice:*
+> The CSD API call is OUTSIDE Kafka — transactions don't cover it. Solution: pass tradeId as idempotency key to CSD API on every call. CSD API: 'I've already settled tradeId T-001 — here's the cached result, not settling again.' This is exactly the pattern from Saga idempotency — external API calls must be idempotent separately.*
+>
+> *Combined: Kafka transactions handle message-layer exactly-once. Idempotency key handles external API exactly-once. Together = no duplicate settlements."*
+
+```java
+try {
+    producer.beginTransaction();
+
+    // Idempotency key = tradeId — CSD deduplicates on its side
+    CsdResult result = csdApi.settle(trade.getTradeId(), trade);
+
+    producer.send(new ProducerRecord<>(
+        "trade-settled-events",
+        trade.getTradeId(),
+        serialize(result)
+    ));
+
+    producer.sendOffsetsToTransaction(offsets, "settlement-processor");
+    producer.commitTransaction(); // ✅ atomic
+
+} catch (Exception e) {
+    producer.abortTransaction(); // ✅ rollback
+}
+```
+
+---
+
+**Incident 2 — Add specific configuration values**
+
+You correctly identified cooperative rebalancing — now make it specific:
+
+> *"Three specific fixes:*
+>
+> *Fix 1 — Switch to CooperativeStickyAssignor:*
+> ```java
+> props.put(ConsumerConfig.PARTITION_ASSIGNMENT_STRATEGY_CONFIG,
+>     CooperativeStickyAssignor.class.getName());
+> ```
+> Only partitions being moved stop — others continue processing during rebalance.*
+>
+> *Fix 2 — Static group membership:*
+> ```yaml
+> group.instance.id: settlement-consumer-1  # stable per pod
+> session.timeout.ms: 30000                 # 30s before considered dead
+> ```
+> Consumer restart during deployment → Kafka recognises same consumer returning → no rebalance triggered until session timeout exceeded.*
+>
+> *Fix 3 — Rolling deployment:*
+> Deploy one pod at a time. With static membership + cooperative rebalancing — only 1/12 partitions briefly paused per pod restart. Total disruption: milliseconds per pod, not 8 minutes for entire group."*
+
+---
+
+**Incident 3 — Immediate action was incomplete**
+
+You identified the problem but didn't answer **what to do RIGHT NOW** in the next 2 hours:
+
+> *"Immediate actions — next 30 minutes:*
+>
+> *Step 1 — Diagnose root cause first:*
+> Is CSD API slow/down? Check CSD response times. Is each event taking longer to process than normal? Check consumer processing time metrics.*
+>
+> *Step 2 — Scale consumers immediately:*
+> Current: 12 consumers, 12 partitions — already at max parallelism. To add more consumers I need more partitions first. Emergency partition increase: create new topic `trade-settlement-events-v2` with 30 partitions, dual-publish to both topics, migrate consumers to new topic — 30 consumers now processing.*
+>
+> *Step 3 — If CSD is the bottleneck:*
+> Parallelise CSD calls within each consumer — process multiple trades concurrently per consumer using CompletableFuture. If CSD has rate limits — negotiate emergency limit increase for end-of-day settlement run.*
+>
+> *Step 4 — Prioritise high-value trades:*
+> Not all 2 million events are equal. Triage — process high-value institutional trades first. Implement priority consumer that reads from a separate high-priority partition first.*
+>
+> *Step 5 — Communicate proactively:*
+> Immediately notify trading desk and institutional client relationship managers — give honest ETA, identify which clients are at risk of missing settlement cutoff, escalate to operations for manual settlement of highest-value trades if needed."*
+
+---
+
+**Incident 3 — Permanent fix needs more depth**
+
+> *"Three permanent fixes:*
+>
+> *Fix 1 — Right-size partitions and consumers:*
+> Capacity plan based on peak volume × processing time. If each event takes 50ms to process and peak is 10K events/second — need minimum 500 consumer threads. With 30 partitions and async processing per consumer — achievable.*
+>
+> *Fix 2 — Async CSD API calls:*
+> Current design is synchronous — one CSD call per consumer thread. Switch to async batch processing — each consumer batches 100 trades, calls CSD batch API, publishes results together. Throughput increases 100x.*
+>
+> *Fix 3 — Consumer lag alerting:*
+> Alert when lag exceeds 100K events — not 2 million. At 100K we have time to react. At 2 million we're already in crisis. Set auto-scaling triggers — lag > 50K → add consumer instances automatically.*
+>
+> ```yaml
+> # Kafka consumer lag alerting
+> alert: ConsumerLagHigh
+> condition: consumer_lag > 100000
+> action: page on-call + trigger auto-scale
+> ```"*
+
+---
+
+## 🏆 Model Answer Summary (9/10)
+
+> **Incident 1:**
+> *"Two-part fix: Kafka transactions make RPW atomic — crash mid-flow rolls back, event reprocessed cleanly. Idempotency key (tradeId) on CSD API prevents double settlement — CSD returns cached result on duplicate call. Transactions handle Kafka layer, idempotency key handles external API layer."*
+
+> **Incident 2:**
+> *"Stop-the-world eager rebalancing with 12 consumers all pausing simultaneously. Fix: CooperativeStickyAssignor (only affected partitions pause), static group membership (restarts don't trigger rebalance), rolling deployment (one pod at a time). Result: rebalance impact drops from 8 minutes to seconds."*
+
+> **Incident 3 Immediate:**
+> *"Diagnose: CSD bottleneck or consumer throughput? Scale: emergency new topic with 30 partitions + 30 consumers. Prioritise: high-value trades processed first. Communicate: proactive client notification, manual settlement escalation for highest-value trades at risk."*
+
+> **Incident 3 Permanent:**
+> *"Right-size: capacity plan partitions × consumers for peak volume. Async CSD: batch API calls — 100x throughput improvement. Alert earlier: lag > 100K triggers auto-scale, not 2 million when already in crisis."*
+
+---
+
+## 📊 Running Scorecard
+
+| Question | Topic | Score | Trend |
+|---|---|---|---|
+| Q13 — Saga | Loan Origination | 9.5/10 | 🚀 Outstanding |
+| Q15 — Patterns | Lloyds Modernisation | 9/10 | 🚀 Exceptional |
+| Q16 — Resilience | Payments Cascade | 8.5/10 | 📈 Strong |
+| Q17 — Kafka | Payment Design Review | 7.5/10 | 📈 Solid |
+| Q18 — Kafka | Trade Settlement | 7/10 | 📈 Good |
+
+---
+
+> 🔑 **Coaching note:** Your biggest gap this question was the **immediate action for Incident 3** — you identified the permanent fix correctly but didn't answer what to do in the next 2 hours before the cutoff. In FS interviews, incident questions always have two parts — the firefight (now) and the fix (permanent). Always answer both explicitly. The other gap — how transactions + idempotency key work together for external APIs — is now clear from the explanation above. These two concepts together are the complete exactly-once story in FS.
+
+---
+**You are absolutely right to challenge Step 2 — it was impractical!** Let me own that and give you the real answer. Then I'll go deep on transaction internals.
+
+---
+
+## ✅ Your Correction — 100% Valid
+
+> *"Creating a new topic with 30 partitions doesn't help the 2 million events already sitting on the existing 12-partition topic. Those events are already there — new consumers on a new topic don't touch them."*
+
+You're right. Let me give the **actually practical** immediate actions:
+
+---
+
+## 🔥 Incident 3 — Practical Immediate Actions
+
+### The Real Problem
+```
+trade-settlement-events: 12 partitions, 12 consumers
+2 million events backed up
+Each event = 1 CSD API call = ~50ms
+12 consumers × 20 events/sec = 240 events/sec
+2,000,000 ÷ 240 = 8,333 seconds = ~2.3 hours
+Cutoff: 2 hours → you WILL miss it
+```
+
+### What Actually Works RIGHT NOW
+
+**Action 1 — Parallelise processing WITHIN each consumer**
+
+Each consumer is processing one event at a time — synchronous. Switch to async concurrent processing within each consumer:
+
+```java
+// CURRENT — synchronous, 1 event at a time per consumer
+while (true) {
+    ConsumerRecords records = consumer.poll(100ms);
+    for (record : records) {
+        csdApi.settle(record);  // blocks — 50ms each
+        commitOffset(record);
+    }
+}
+// Throughput: 20 events/sec per consumer × 12 = 240/sec
+
+// FIXED — async concurrent, 50 events at a time per consumer
+while (true) {
+    ConsumerRecords records = consumer.poll(100ms);
+    List<CompletableFuture> futures = records.stream()
+        .map(record -> CompletableFuture.supplyAsync(
+            () -> csdApi.settle(record), executorPool))
+        .collect(toList());
+    CompletableFuture.allOf(futures).join(); // wait for batch
+    commitOffsetForBatch(records);
+}
+// Throughput: 50 concurrent × 12 consumers = 600 events/sec
+// 2M ÷ 600 = ~55 minutes ✅ catchable before cutoff
+```
+
+---
+
+**Action 2 — Increase partitions on EXISTING topic + add consumers**
+
+> *"You can increase partitions on the existing topic — new partitions are empty initially, but Kafka rebalances existing partition assignments. The key is that existing 12 partitions now have fewer consumers each, freeing threads. But more importantly — adding partitions allows adding more consumer instances beyond 12."*
+
+**Practical caveat you correctly spotted:**
+
+> *"Increasing partitions changes hash(tradeId) % N mapping — existing in-flight events stay on old partitions. New events go to new partitions. During the catch-up window, old partitions still have 2M events — new partitions are empty. So new consumer instances assigned to new partitions sit idle. This is the flaw — it only helps AFTER the backlog is cleared."*
+
+**So the honest answer for immediate action:**
+> *"For the 2-hour window — async concurrent processing within existing consumers is the ONLY lever that works immediately without infrastructure changes. New partitions help future throughput, not the existing backlog."*
+
+---
+
+**Action 3 — Triage and manual settlement for highest-value trades**
+
+> *"At investment bank scale, 2 million events are NOT all equal. Top 100 trades by value might represent 80% of the financial exposure. I'd immediately extract the highest-value pending trades from the topic using a dedicated triage consumer, escalate to operations team for manual CSD submission in parallel — bypassing the automated pipeline entirely for the most critical trades."*
+
+---
+
+**Action 4 — Negotiate CSD batch API**
+
+> *"CSD APIs often have batch endpoints — submit 100 trades in one call instead of 1. If the CSD supports batch settlement, switching from single to batch calls gives 10-50x throughput improvement without any infrastructure changes."*
+
+---
+
+## 🔬 Kafka Transactions — Internal Deep Dive
+
+Now the really good stuff — how transactions actually work under the hood.
+
+---
+
+### The 4 Components Involved
+
+```
+1. Producer (client)              — initiates and manages transaction
+2. Transaction Coordinator        — broker-side component, manages state
+3. __transaction_state topic      — persists transaction state
+4. Partition Leaders              — actual brokers holding the data
+```
+
+---
+
+### The IDs Involved
+
+**PID — Producer ID:**
+```
+Assigned by Kafka cluster on producer startup
+Unique per producer instance
+Ephemeral — changes on restart (unless transactional.id set)
+Used for: idempotent deduplication (sequence numbers)
+```
+
+**Transactional ID:**
+```
+Set by application developer — stable string
+props.put(TRANSACTIONAL_ID_CONFIG, "payment-processor-1")
+Survives restarts — same ID across producer restarts
+Used for: zombie fencing, transaction continuity
+```
+
+**Epoch:**
+```
+Incremented every time producer with same transactional.id restarts
+Old producer epoch < New producer epoch
+Broker rejects writes from old epoch → zombie fencing
+```
+
+**Transaction Coordinator:**
+```
+Determined by: hash(transactional.id) % __transaction_state.partitions
+Every transactional.id maps to exactly one coordinator broker
+That broker manages all transactions for that producer
+```
+
+---
+
+### Transaction Flow — Step by Step Internally
+
+```
+Step 1: initTransactions()
+─────────────────────────
+Producer → Transaction Coordinator:
+  "I am transactional.id=payment-processor-1, give me PID"
+
+Coordinator:
+  Looks up payment-processor-1 in __transaction_state
+  Increments epoch: epoch 4 → epoch 5 (fences old producer)
+  Assigns new PID: 8821
+  Responds: { PID: 8821, epoch: 5 }
+
+Producer now has: PID=8821, epoch=5
+Any old producer with epoch 4 → rejected by brokers ✅
+
+
+Step 2: beginTransaction()
+──────────────────────────
+Client-side only — no network call to broker
+Producer internally sets flag: inTransaction = true
+Nothing written to Kafka yet
+
+
+Step 3: producer.send() — writing messages
+──────────────────────────────────────────
+Producer → Partition Leader (trade-settled-events / P3):
+  "Register: PID 8821, epoch 5 is writing to this partition"
+
+Partition Leader → Transaction Coordinator:
+  "FYI: PID 8821 is now writing to trade-settled-events/P3"
+
+Coordinator updates __transaction_state:
+  { txnId: payment-processor-1,
+    state: ONGOING,
+    partitions: [trade-settled-events/P3, payment-audit/P1] }
+
+Messages written to partition log — marked with PID + epoch
+BUT marked as UNCOMMITTED — invisible to read_committed consumers
+
+
+Step 4: sendOffsetsToTransaction()
+───────────────────────────────────
+Producer → Transaction Coordinator:
+  "Also include consumer offset commit in this transaction:
+   trade-settlement-events/P7 = offset 14523"
+
+Coordinator writes offset to __consumer_offsets
+BUT marks it as part of transaction — not yet effective
+
+
+Step 5: commitTransaction()
+────────────────────────────
+Producer → Transaction Coordinator:
+  "Commit transaction for PID 8821"
+
+Coordinator writes to __transaction_state:
+  { state: PREPARE_COMMIT } ← durable checkpoint
+
+Coordinator → Each Partition Leader involved:
+  "Write COMMIT marker to trade-settled-events/P3"
+  "Write COMMIT marker to payment-audit/P1"
+  "Write COMMIT marker to __consumer_offsets"
+
+Partition Leaders write commit markers
+Messages now VISIBLE to read_committed consumers ✅
+Offset now EFFECTIVE — consumers resume from here ✅
+
+Coordinator writes to __transaction_state:
+  { state: COMMITTED } ← transaction complete
+
+
+Step 6: abortTransaction()
+────────────────────────────
+Same as commit but writes ABORT markers
+Messages remain in log but SKIPPED by read_committed consumers
+Offset NOT committed — consumers reprocess from last committed offset
+```
+
+---
+
+### Visual Summary of Transaction State Machine
+
+```
+initTransactions()
+       ↓
+   [EMPTY] ──beginTransaction()──→ [ONGOING]
+                                       ↓
+                              messages written
+                              offsets registered
+                                       ↓
+                          ┌────────────┴────────────┐
+                   commitTransaction()         abortTransaction()
+                          ↓                         ↓
+                  [PREPARE_COMMIT]          [PREPARE_ABORT]
+                          ↓                         ↓
+                  write COMMIT markers      write ABORT markers
+                          ↓                         ↓
+                     [COMMITTED]              [ABORTED]
+                          ↓                         ↓
+                  messages visible          messages invisible
+                  offsets effective         offsets unchanged
+```
+
+---
+
+### Who Manages What — Client vs Broker
+
+| Responsibility | Managed By |
+|---|---|
+| beginTransaction() | **Client only** — local flag, no network call |
+| PID + epoch assignment | **Transaction Coordinator (broker)** |
+| Transaction state machine | **Transaction Coordinator (broker)** |
+| Persisting transaction state | **__transaction_state topic (broker)** |
+| Writing uncommitted messages | **Partition Leaders (broker)** |
+| Writing commit/abort markers | **Transaction Coordinator → Partition Leaders** |
+| Filtering uncommitted messages | **Partition Leaders** (for read_committed consumers) |
+| Sequence number tracking | **Both** — producer assigns, broker verifies |
+
+---
+
+## 🔥 What Happens if Kafka Goes Down?
+
+This is the critical question — let's cover every scenario:
+
+---
+
+### Scenario 1 — Single Broker Goes Down (Normal — Handled Automatically)
+
+```
+Broker 2 (hosts P1 leader) crashes
+         ↓
+ZooKeeper / KRaft detects: Broker 2 heartbeat lost
+         ↓
+Controller triggers leader election for P1
+         ↓
+Broker 3 (has P1 replica, in sync) elected as new P1 leader
+         ↓
+Producers + consumers reconnect to Broker 3 for P1
+         ↓
+Zero data loss — replica was in sync (ISR)
+Time to recover: seconds
+```
+
+**In-flight transaction during broker failure:**
+```
+Producer mid-transaction, P1 leader (Broker 2) crashes
+         ↓
+Producer gets connection error
+         ↓
+Producer aborts transaction
+         ↓
+New leader (Broker 3) has no uncommitted messages
+         ↓
+Producer retries — begins new transaction on Broker 3
+→ Exactly-once maintained ✅
+```
+
+---
+
+### Scenario 2 — Transaction Coordinator Broker Goes Down
+
+```
+Transaction Coordinator for payment-processor-1 crashes
+         ↓
+New Transaction Coordinator elected
+(hash(transactional.id) now maps to surviving broker)
+         ↓
+New Coordinator reads __transaction_state topic
+(replicated — survives broker failure)
+         ↓
+Finds transaction in PREPARE_COMMIT state:
+  → Completes the commit (writes commit markers)
+  → Transaction committed even though coordinator crashed ✅
+
+Finds transaction in ONGOING state:
+  → Times out after transaction.timeout.ms (default 1 min)
+  → Aborts the transaction
+  → Producer retries on new coordinator ✅
+```
+
+---
+
+### Scenario 3 — Majority of Brokers Down (Cluster Failure)
+
+```
+Cluster: 3 brokers, replication factor 3, min.insync.replicas=2
+Brokers 2 + 3 crash → only Broker 1 alive
+         ↓
+Partition leaders on Broker 1:
+  min.insync.replicas=2 not met (only 1 broker alive)
+         ↓
+Producers: NotEnoughReplicasException thrown
+  → Writes rejected — cannot guarantee durability ❌
+  → Producer retries but can't proceed
+         ↓
+Consumers: can still read existing committed messages ✅
+  → Reads continue from Broker 1
+
+Recovery:
+  Brokers 2 + 3 restart
+  → Replicate from Broker 1 (catch up)
+  → ISR restored → writes resume
+  → Zero data loss ✅
+```
+
+---
+
+### Scenario 4 — Complete Cluster Down (All Brokers)
+
+```
+All brokers crash simultaneously
+         ↓
+Producers: cannot connect — buffer messages locally
+  → If buffer fills (buffer.memory exhausted) → block or drop
+  → Transactions cannot proceed — abort after timeout
+
+Consumers: cannot connect — stop processing
+  → Last committed offset preserved in __consumer_offsets
+  → On recovery: resume from last committed offset ✅
+
+Data already committed to disk:
+  → Partition log files on each broker's disk
+  → Survive broker restart
+  → On restart: data available again ✅
+
+In-flight uncommitted transactions:
+  → Transaction timeout fires
+  → Coordinator aborts on recovery
+  → Producer retries ✅
+
+Potential data loss:
+  → Messages in OS page cache NOT yet flushed to disk
+  → Hard power failure (not graceful shutdown) could lose these
+  → Mitigation: flush.messages=1 (flush every message to disk)
+  → Tradeoff: significant performance cost
+  → FS standard: rely on replication (3 brokers) rather than
+    disk flush — losing all 3 brokers simultaneously is
+    extremely unlikely in a well-designed multi-AZ cluster
+```
+
+---
+
+### Scenario 5 — ZooKeeper / KRaft Goes Down
+
+```
+ZooKeeper ensemble down (all 3 ZK nodes crash)
+         ↓
+Existing Kafka brokers continue serving
+  → Producers: continue writing to existing partition leaders ✅
+  → Consumers: continue reading ✅
+  → No new leader elections possible
+  → No new topic creation possible
+  → No broker additions possible
+         ↓
+If a partition LEADER crashes while ZK is down:
+  → No new leader can be elected
+  → That partition becomes unavailable ❌
+  → Other partitions unaffected ✅
+
+Recovery:
+  ZooKeeper restarts → brokers reconnect
+  Controller re-elected → leader elections resume
+  Normal operations restored
+```
+
+**KRaft advantage here:**
+> *"With KRaft, metadata is managed within Kafka itself — no ZooKeeper dependency. Metadata quorum (3 controller nodes) uses Raft consensus. Losing 1 of 3 controller nodes → still functional. This is why Kafka is migrating to KRaft — eliminates ZooKeeper as a separate failure point."*
+
+---
+
+### FS Kafka High Availability Design — Summary
+
+```
+To survive any single failure:
+  ✅ Replication factor: 3
+  ✅ min.insync.replicas: 2
+  ✅ acks: all
+  ✅ Multi-AZ broker deployment (Broker 1 in AZ-a, 2 in AZ-b, 3 in AZ-c)
+  ✅ ZooKeeper ensemble: 3 or 5 nodes (or KRaft with 3 controllers)
+  ✅ Idempotent producer + Kafka transactions
+  ✅ Manual offset commit on consumers
+
+This configuration:
+  → Tolerates 1 broker failure: zero data loss, automatic recovery
+  → Tolerates 1 AZ failure: zero data loss, automatic recovery
+  → Tolerates complete cluster failure: zero data loss on restart
+    (potential loss of page-cache-only data without disk flush)
+```
+
+---
+
+## 🔑 Key Takeaways
+
+| Question | Real Answer |
+|---|---|
+| **Immediate scaling for backlog** | Async concurrent processing within consumers — not new topics |
+| **Transaction managed by** | Coordinator (broker) for state, client framework for flow control |
+| **IDs used** | PID (ephemeral), Transactional ID (stable), Epoch (fence zombies) |
+| **Single broker failure** | Automatic leader election, zero data loss with ISR |
+| **Coordinator failure** | New coordinator reads __transaction_state, completes or aborts |
+| **Full cluster failure** | Data safe on disk, resume from committed offsets on restart |
+| **ZooKeeper failure** | Existing operations continue, new elections blocked |
+
+---
+
+Great instinct — you're right, dual-write to hot and warm simultaneously creates unnecessary coupling. Let me re-ask the full question with enriched sub-questions based on everything we've discussed!
+
+---
+
+# 🎤 Real-Time Account Statement Service — Full Design Question
+
+### "You are the Engineering Manager at a UK Retail Bank. Design a **Real-Time Account Statement Service** from scratch.
+
+**Functional Requirements:**
+- Every debit and credit on every customer account captured as an event
+- Events processed in **strict chronological order per account**
+- Processed events build a **real-time account statement** readable on mobile app
+- Every event stored for **7 years** for FCA compliance — immutable, tamper-proof
+- GDPR — customer PII must be **tokenised** before storing anywhere
+
+**Non-Functional Requirements:**
+- **5 million active accounts**
+- Peak: **500,000 events per second**
+- Statement read latency: **under 50ms**
+- **99.999% availability**
+- UK customer data stays in UK, EU customer data stays in EU
+- UK customer travelling to EU must still be served correctly
+
+---
+
+## The board asks you 8 specific questions:
+
+**Q1 — Jurisdiction & Routing:**
+How do you separate UK and EU stacks? How does a UK customer travelling to Frankfurt get routed correctly? What happens if the entire London region goes down — can you failover to EU?
+
+**Q2 — Kafka Architecture:**
+How many partitions, what partition key, how many consumers? How do you guarantee strict ordering per account at 500K events/second? How is your Kafka cluster deployed for 99.999% within each jurisdiction?
+
+**Q3 — Exactly-Once Guarantee:**
+Walk me through your three-layer exactly-once strategy. What happens if the consumer crashes between processing an event and committing the offset?
+
+**Q4 — Tokenisation:**
+Which fields do you tokenise, which approach (FPE vs vault), which service, and where in the flow does tokenisation happen? What happens if the token vault goes down?
+
+**Q5 — Storage Architecture:**
+You have 500K events/second and need 7-year retention. You cannot store everything in Cassandra forever. How do you design your storage tiers — what goes where, how does data move between tiers, and how do you ensure the 50ms read SLA is maintained? What is WORM and how does it work?
+
+**Q6 — GDPR Erasure:**
+A customer requests deletion of all their data. You have events in Kafka, Cassandra and S3 — all append-only or immutable. How do you honour the right to erasure without violating FCA 7-year retention?
+
+**Q7 — Consumer Architecture & Read SLA:**
+Design the full consumer group architecture — how many groups, what does each do? How do you achieve under 50ms for statement reads? How does pagination work?
+
+**Q8 — 99.999% Availability:**
+99.999% = 5.26 minutes downtime per year. Walk through your failure scenarios — single broker, single AZ, single region — with detection time, recovery time and data loss for each. How do you handle scheduled deployments without breaching the SLA?"**
+
+---
+
+> 💡 *This is a 30-minute Director/Principal level question. Take your time, answer each part thoroughly. Use your Lloyds experience where relevant. Think practically — not just theoretically.*
+
+Really strong answer! You've clearly absorbed everything from our sessions. Here's your detailed feedback 👇
+
+---
+
+## ✅ Feedback — Full Design Question
+
+### What you got right
+- ✅ **Multi-regional foundation** — UK (London+Belgium), EU (Ireland+Frankfurt) — correct
+- ✅ **Full stack per jurisdiction** — CDN → ALB → API GW → ILB → Compute → DB — complete
+- ✅ **Akamai jurisdiction-based routing** — JWT claim for authenticated, geo for login — excellent
+- ✅ **Option 1 simplicity** — direct consumer from payment-settled-topic — pragmatic
+- ✅ **Three-layer exactly-once** — idempotent producer + consumer dedup by eventId — correct
+- ✅ **AccountId partition key** — ordering per account — correct
+- ✅ **Crash before offset commit** — idempotency check saves us — precisely correct
+- ✅ **Encryption before publishing** — PII never in plaintext in Kafka — correct
+- ✅ **Parallel consumer threads** — ordering via timestamp sort on read — smart insight
+- ✅ **Cassandra as operational DB** — correct choice
+- ✅ **Offline archival process** — hot → warm → cold — correct approach
+- ✅ **Two consumer groups** — Cassandra writer + S3 writer — excellent
+- ✅ **GDPR crypto shredding** — delete key → data unreadable — correct
+- ✅ **Paginated API** — 25 records, timestamp-based cursor — correct
+- ✅ **Redis cache** — correct introduction
+- ✅ **Blue-green/canary deployments** — correct zero-downtime approach
+
+### Your Score: **8/10** — Excellent! Here's the push to 9/10 💡
+
+---
+
+## Gaps to Close
+
+### Gap 1 — Consumer Throughput Maths Was Wrong
+
+You correctly identified something was off:
+
+> *"10 threads × 1 record per 50ms = 200 events/second per consumer. 500K ÷ 200 = 2,500 consumers — that's too many."*
+
+**The correct calculation:**
+
+```
+The 50ms processing time assumption is wrong for this use case.
+
+What each consumer thread actually does:
+1. Deserialise event:           ~1ms
+2. Idempotency check (Cassandra): ~5ms (async, non-blocking)
+3. Cassandra write:              ~5ms (async, non-blocking)
+4. Total per event:             ~11ms
+
+With async non-blocking I/O (not blocking thread per operation):
+→ Thread doesn't wait for Cassandra — fires async, moves to next
+→ 10 async threads can process 10 events concurrently
+→ Each event ~11ms → 10 threads = 10 ÷ 0.011 = ~900 events/second
+
+Revised calculation:
+500,000 ÷ 900 = ~556 consumers needed
+Round up with buffer: 600 consumers
+Partitions: 600 (1 consumer per partition)
+
+That's still a lot — is there a better way?
+
+Better approach — increase threads per consumer:
+→ 50 async threads per consumer
+→ 50 ÷ 0.011 = ~4,500 events/second per consumer
+→ 500,000 ÷ 4,500 = ~112 consumers
+→ Round up: 150 partitions, 150 consumers ✅
+
+Key insight:
+→ With async non-blocking processing, thread count is not
+  the bottleneck — Cassandra throughput is
+→ Cassandra can handle 500K writes/second across cluster
+→ Right-size by load testing, not pure maths
+→ Start: 150 partitions, 150 consumers, 50 async threads each
+→ Monitor consumer lag → scale if needed
+```
+
+---
+
+### Gap 2 — Write-Through Cache — Wrong Pattern Here
+
+You suggested write-through for Redis — this needs correction:
+
+> *"Write-Through means: write to Redis first, then DB. Problem — if Redis write succeeds but DB write fails, we have data in cache but not in DB. For financial statement data this is dangerous — customer sees transaction in app but it's not in DB."*
+
+**Correct pattern:**
+
+```
+Write path (consumer):
+→ Write to Cassandra FIRST (source of truth)
+→ On successful Cassandra write → publish invalidation event
+→ Redis cache invalidated (NOT written to directly)
+
+Read path (Statement API):
+→ Check Redis first (Cache-Aside)
+→ Cache hit: return from Redis (~1ms)
+→ Cache miss: read from Cassandra → populate Redis → return
+
+Why Cache-Aside not Write-Through:
+→ Cassandra is source of truth — always
+→ Redis is a read acceleration layer — never source of truth
+→ If Redis fails → reads still work from Cassandra
+→ If Redis has stale data → worst case: customer sees
+  slightly old statement → acceptable
+→ If DB fails → we fail the write — never silently succeed
+```
+
+---
+
+### Gap 3 — Hot → Warm Archival Process — Needs More Detail
+
+You correctly identified offline archival process — now make it specific:
+
+```
+Hot → Warm archival:
+
+Option A: TTL-based (simplest)
+→ Hot Cassandra table: TTL = 6 months
+→ Warm Cassandra table: TTL = 3 years
+→ Consumer writes to HOT table only
+→ Separate archival job runs nightly:
+   SELECT events WHERE event_ts < NOW() - 6 months
+   FROM hot_statements
+   INSERT INTO warm_statements
+   DELETE FROM hot_statements
+→ Problem: archival job reads + writes at scale — expensive
+
+Option B: Consumer dual-writes hot + warm (your concern — coupling)
+→ You correctly rejected this ❌
+
+Option C: Separate archival consumer (BEST — your insight!)
+→ Third consumer group: archival-mover
+→ Reads from payment-settled-topic (independent offset)
+→ Writes directly to warm table (different TTL)
+→ Hot consumer writes hot only
+→ No coupling between hot and warm writes ✅
+→ If warm fails → hot write unaffected ✅
+→ This is exactly your two-consumer-group insight applied to tiers
+
+Hot consumer group:    writes to Cassandra hot (TTL 6 months)
+Warm consumer group:   writes to Cassandra warm (TTL 3 years)
+Archive consumer group: writes to S3 WORM (7 years)
+→ All three read from same Kafka topic independently
+→ Each at their own pace
+→ Each failure completely isolated ✅
+```
+
+---
+
+### Gap 4 — Q1 Partially Answered — London Region Down Scenario
+
+You mentioned active-active but didn't explicitly answer:
+
+> *"Can UK failover to EU if London goes down? Answer: NO — UK data cannot go to EU jurisdiction. This is the critical constraint.*
+>
+> *If ALL of London goes down AND Belgium goes down simultaneously — UK service is unavailable. We accept this as an extreme edge case. The SLA calculation: London + Belgium both failing simultaneously is a probability of P(London fails) × P(Belgium fails) ≈ 0.001% × 0.001% = essentially zero. The 99.999% SLA is maintained by active-active London + Belgium — not by cross-jurisdiction failover."*
+
+---
+
+### Gap 5 — 99.999% Failure Scenarios Not Explicitly Walked Through
+
+The board asked for specific detection + recovery times:
+
+```
+Failure scenario walk-through:
+
+1. Single Kafka broker fails:
+   Detection: ZooKeeper/KRaft heartbeat timeout: 5 seconds
+   Recovery:  Leader election: 10 seconds
+   Data loss: None (ISR replicas take over)
+   Total:     15 seconds ✅
+
+2. Single AZ fails (London AZ-a):
+   Detection: Route 53 health check: 20 seconds
+   Recovery:  Traffic shifts to AZ-b, AZ-c: 30 seconds
+   Data loss: None (multi-AZ replication)
+   Total:     ~50 seconds ✅
+
+3. Entire London region fails:
+   Detection: Route 53 health check: 20 seconds
+   Recovery:  DNS failover to Belgium: 30 seconds
+   Data loss: Near-zero (Belgium replicas slightly behind)
+   Total:     ~50 seconds ✅ within 5-minute budget
+
+4. Consumer pod crashes:
+   Detection: K8s liveness probe: 10 seconds
+   Recovery:  Pod restart: 20 seconds
+   Data loss: None (uncommitted offset replayed)
+   Total:     ~30 seconds ✅
+
+5. Scheduled deployment (blue-green):
+   Detection: N/A — planned
+   Recovery:  Zero downtime — blue-green per region
+   Data loss: None
+   Total:     0 seconds downtime ✅
+   Strategy:  Deploy Belgium first → validate → deploy London
+              → If London deployment fails → Belgium serving all UK traffic
+              → Roll back London → investigate
+```
+
+---
+
+### Gap 6 — Token Vault High Availability Not Addressed
+
+> *"If token vault goes down — what happens? Every API response requires detokenisation. Every event publish requires tokenisation. Vault is now a critical path dependency.*
+>
+> *Solution:*
+> *1. Vault HA cluster: 3 nodes per region, Raft consensus — tolerates 1 node failure*
+> *2. Token cache: detokenised values cached in Redis with short TTL (1 hour) — if vault is temporarily down, cached tokens serve recent requests*
+> *3. Circuit breaker on vault: if vault down, API returns last cached statement with staleness indicator — never a hard error for reads*
+> *4. For writes: if vault down during tokenisation — payment service cannot publish to Kafka — payment fails explicitly — never publishes unencrypted PII as fallback"*
+
+---
+
+## 🏆 Your Corrected Complete Answer (9/10 level)
+
+Let me summarise what your answer looks like with all gaps filled:
+
+---
+
+### Q1 — Jurisdiction & Routing ✅
+> *"UK: London (primary) + Belgium (secondary) — active-active, no EU fallback. EU: Ireland (primary) + Frankfurt (secondary) — active-active, no UK crossover. Akamai routes by JWT jurisdiction claim for authenticated users. Login page routes by IP geolocation. London complete failure → Belgium serves all UK traffic. UK cannot failover to EU — data residency hard boundary."*
+
+### Q2 — Kafka Architecture ✅
+> *"150 partitions, accountId partition key, 150 consumers with 50 async threads each. Kafka cluster: multi-AZ within jurisdiction. UK: London + Belgium observers. EU: Ireland + Frankfurt active-active in same cluster. RF=3, min.insync.replicas=2, acks=all."*
+
+### Q3 — Exactly-Once ✅
+> *"Layer 1: idempotent producer. Layer 2: consumer-side eventId check in Cassandra before write. Layer 3: if crash before offset commit — event redelivered — idempotency check catches duplicate — discard. DLQ for events failing after 3 retries."*
+
+### Q4 — Tokenisation ✅
+> *"FPE for account numbers + sort codes (format-preserving). Random tokenisation for names + addresses. HashiCorp Vault. Tokenisation happens in Payment Service before publishing. Vault HA cluster + Redis token cache as fallback. Vault down → circuit breaker → cached tokens serve reads → writes fail explicitly."*
+
+### Q5 — Storage Architecture ✅
+> *"Three independent consumer groups reading same Kafka topic: hot consumer → Cassandra hot (6 months), warm consumer → Cassandra warm (3 years), archive consumer → S3 WORM (7 years). Each group independent — failure isolated. No coupling between tiers. S3 WORM: Object Lock COMPLIANCE mode — 7-year immutable retention, tamper-proof, Athena queryable."*
+
+### Q6 — GDPR Erasure ✅
+> *"Crypto shredding: delete customer's encryption key from Vault. All encrypted tokens in Kafka, Cassandra, S3 become unreadable without key. Data physically present but effectively erased. FCA retention honoured — anonymised records remain. Respond to customer within 30 days."*
+
+### Q7 — Consumer Architecture & Read SLA ✅
+> *"Three consumer groups: hot-writer, warm-writer, archive-writer — all independent. Read API: Redis L1 (Cache-Aside, 1ms) → Hot Cassandra L2 (10ms) → Warm Cassandra L3 (20ms) → S3 Athena L4 (2-5 seconds). Paginated: 25 records, timestamp cursor. Total read latency: ~44ms ✅"*
+
+### Q8 — 99.999% Availability ✅
+> *"Single broker: 15s recovery. Single AZ: 50s. Single region: 50s. Consumer crash: 30s. Deployment: zero downtime via blue-green, Belgium first then London. All within 5-minute annual budget."*
+
+---
+
+## 📊 Final Scorecard
+
+| Question | Score | Notes |
+|---|---|---|
+| Q1 — Jurisdiction & Routing | 8/10 | Good — failover boundary needed explicit statement |
+| Q2 — Kafka Architecture | 8/10 | Maths off but approach right |
+| Q3 — Exactly-Once | 9/10 | Very strong |
+| Q4 — Tokenisation | 7/10 | Vault HA not addressed |
+| Q5 — Storage Architecture | 8.5/10 | Three independent consumers — excellent insight |
+| Q6 — GDPR Erasure | 9/10 | Crypto shredding — correct |
+| Q7 — Consumer + Read SLA | 8/10 | Cache pattern wrong (write-through vs Cache-Aside) |
+| Q8 — 99.999% | 7/10 | Mentioned but not walked through explicitly |
+| **Overall** | **8/10** | **Strong Director-level answer** |
+
+---
+
+> 🔑 **Key habit to build for interviews:** When the board asks "walk me through failure scenarios" — always give **detection time + recovery time + data loss** for each scenario explicitly. Numbers signal that you've operated these systems in production, not just designed them on paper.
 
 ---
