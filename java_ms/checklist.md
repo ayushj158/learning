@@ -99,29 +99,29 @@ Let me build this properly from scratch — everything an EM at a tier-1 FS GCC 
 ### 3. Design Patterns (GoF)
 
 #### 3.1 Creational Patterns
-- [ ] Singleton — thread-safe implementations (enum, double-checked, holder)
-- [ ] Factory Method — when to use, FS example
-- [ ] Abstract Factory — difference from Factory Method
-- [ ] Builder — fluent API, immutable objects, FS example (Payment builder)
-- [ ] Prototype — cloning, shallow vs deep copy
+- [x] Singleton — thread-safe implementations (enum, double-checked, holder)
+- [x] Factory Method — when to use, FS example
+- [x] Abstract Factory — difference from Factory Method
+- [x] Builder — fluent API, immutable objects, FS example (Payment builder)
+- [x] Prototype — cloning, shallow vs deep copy
 
 #### 3.2 Structural Patterns
-- [ ] Adapter — legacy CBS integration, SOAP → REST adapter
-- [ ] Decorator — adding behaviour without inheritance, FS example
-- [ ] Facade — simplifying complex subsystem, FS example (CBS facade)
-- [ ] Proxy — virtual proxy, protection proxy, remote proxy
-- [ ] Composite — tree structures
-- [ ] Bridge — separating abstraction from implementation
+- [x] Adapter — legacy CBS integration, SOAP → REST adapter
+- [x] Decorator — adding behaviour without inheritance, FS example
+- [x] Facade — simplifying complex subsystem, FS example (CBS facade)
+- [x] Proxy — virtual proxy, protection proxy, remote proxy
+- [x] Composite — tree structures
+- [x] Bridge — separating abstraction from implementation
 
 #### 3.3 Behavioural Patterns
-- [ ] Strategy — payment routing strategy, fraud scoring strategy
-- [ ] Observer — event-driven, domain events
-- [ ] Chain of Responsibility — validation chains, approval workflows
-- [ ] Command — encapsulating requests, undo/redo, audit trail
-- [ ] Template Method — defining algorithm skeleton
-- [ ] State — order state machine, payment state machine
-- [ ] Iterator — custom collection traversal
-- [ ] Mediator — reducing direct dependencies
+- [x] Strategy — payment routing strategy, fraud scoring strategy
+- [x] Observer — event-driven, domain events
+- [x] Chain of Responsibility — validation chains, approval workflows
+- [x] Command — encapsulating requests, undo/redo, audit trail
+- [x] Template Method — defining algorithm skeleton
+- [x] State — order state machine, payment state machine
+- [x] Iterator — custom collection traversal
+- [x] Mediator — reducing direct dependencies
 
 #### 3.4 Enterprise / FS Patterns
 - [ ] Repository pattern — data access abstraction
@@ -136,49 +136,49 @@ Let me build this properly from scratch — everything an EM at a tier-1 FS GCC 
 ### 4. Microservices Architecture
 
 #### 4.1 Domain-Driven Design (DDD)
-- [ ] Ubiquitous language — shared vocabulary between dev and business
-- [ ] Bounded Context — defining service boundaries
-- [ ] Context Map — relationships between bounded contexts
-- [ ] Aggregate — consistency boundary, aggregate root
-- [ ] Entity vs Value Object
-- [ ] Domain Events — what happened in the domain
-- [ ] Anti-corruption Layer — protecting domain from external models
-- [ ] Strategic vs Tactical DDD
+- [x] Ubiquitous language — shared vocabulary between dev and business
+- [x] Bounded Context — defining service boundaries
+- [x] Context Map — relationships between bounded contexts
+- [x] Aggregate — consistency boundary, aggregate root
+- [x] Entity vs Value Object
+- [x] Domain Events — what happened in the domain
+- [x] Anti-corruption Layer — protecting domain from external models
+- [x] Strategic vs Tactical DDD
 
 #### 4.2 Microservices Decomposition
-- [ ] Decompose by business capability
-- [ ] Decompose by subdomain (DDD)
-- [ ] Single Responsibility for services
-- [ ] Service granularity — too fine vs too coarse
-- [ ] Identifying service boundaries — FS example (payments, accounts, fraud)
+- [x] Decompose by business capability
+- [x] Decompose by subdomain (DDD)
+- [x] Single Responsibility for services
+- [x] Service granularity — too fine vs too coarse
+- [x] Identifying service boundaries — FS example (payments, accounts, fraud)
 
 #### 4.3 Inter-Service Communication
-- [ ] Synchronous — REST, gRPC
-- [ ] Asynchronous — Kafka, Pub/Sub, RabbitMQ
-- [ ] REST — Richardson Maturity Model, HATEOAS
-- [ ] gRPC — Protocol Buffers, HTTP/2, streaming, when over REST
-- [ ] GraphQL — when to use, federation, N+1 problem
-- [ ] API versioning strategies — URL, header, content negotiation
+- [x] Synchronous — REST, gRPC
+- [x] Asynchronous — Kafka, Pub/Sub, RabbitMQ
+- [x] REST — Richardson Maturity Model, HATEOAS
+- [x] gRPC — Protocol Buffers, HTTP/2, streaming, when over REST
+- [x] GraphQL — when to use, federation, N+1 problem
+- [x] API versioning strategies — URL, header, content negotiation
 
 #### 4.4 API Design
-- [ ] RESTful API design principles
-- [ ] HTTP methods — GET, POST, PUT, PATCH, DELETE semantics
-- [ ] HTTP status codes — correct usage in FS
-- [ ] Pagination — offset vs cursor-based
-- [ ] Idempotency — idempotency keys, end-to-end design
-- [ ] API versioning — strategies and tradeoffs
-- [ ] OpenAPI / Swagger — contract-first design
-- [ ] API Gateway patterns — authentication, rate limiting, routing
+- [x] RESTful API design principles
+- [x] HTTP methods — GET, POST, PUT, PATCH, DELETE semantics
+- [x] HTTP status codes — correct usage in FS
+- [x] Pagination — offset vs cursor-based
+- [x] Idempotency — idempotency keys, end-to-end design
+- [x] API versioning — strategies and tradeoffs
+- [x] OpenAPI / Swagger — contract-first design
+- [x] API Gateway patterns — authentication, rate limiting, routing
 
 #### 4.5 Service Mesh
-- [ ] What is a service mesh — data plane vs control plane
-- [ ] Sidecar pattern — how Envoy proxy works
-- [ ] Istio components — Pilot, Citadel, Galley, Mixer
-- [ ] Traffic management — VirtualService, DestinationRule
-- [ ] mTLS — automatic certificate rotation, zero-trust
-- [ ] Observability via mesh — distributed tracing, metrics
-- [ ] Circuit breaking in Istio — outlier detection
-- [ ] Canary deployments via Istio — traffic splitting
+- [x] What is a service mesh — data plane vs control plane
+- [x] Sidecar pattern — how Envoy proxy works
+- [x] Istio components — Pilot, Citadel, Galley, Mixer
+- [x] Traffic management — VirtualService, DestinationRule
+- [x] mTLS — automatic certificate rotation, zero-trust
+- [x] Observability via mesh — distributed tracing, metrics
+- [x] Circuit breaking in Istio — outlier detection
+- [x] Canary deployments via Istio — traffic splitting
 
 #### 4.6 Data Management in Microservices
 - [ ] Database per service pattern
