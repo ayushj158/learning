@@ -4,6 +4,8 @@ Perfect. 10 per team, 30+ total, EM title in interviews. Let's go.
 
 # Section 4.2 — Leadership Style + People Management
 
+#  How you manage a team of 30
+
 ## Part 1: The EM-Level Framing
 
 At Senior EM level, interviewers are not asking "what kind of manager are you." They are testing three things:
