@@ -197,10 +197,18 @@ int rangeSum = prefix[r + 1] - prefix[l];
 ```
 
 ### The killer combination: Prefix Sum + HashMap
+This unlocks a whole class of problems that seem O(n²) but are actually O(n). The pattern:
+```
+sum(i..j) = k
+→ prefix[j+1] - prefix[i] = k
+→ prefix[i] = prefix[j+1] - k
 
-This unlocks "subarray sum equals k" in O(n) — one of the most commonly asked problems at Goldman and JPMC.
+So as you scan right, maintaining currentSum:
+"How many indices i exist where prefix[i] = currentSum - k?"
+Each such index = one valid subarray ending at current position.
 
-The idea: `sum(i..j) = k` means `prefix[j+1] - prefix[i] = k`, which means `prefix[i] = prefix[j+1] - k`. So as you scan right, check if `(currentSum - k)` has appeared before as a prefix sum.
+Store prefix sums in a HashMap as you go.
+```
 
 ```java
 // Count subarrays with sum == k
