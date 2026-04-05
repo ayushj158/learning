@@ -473,28 +473,10 @@ for (int right = 0; right < n; right++) {
     }
     
     // 3. Window is now valid — update answer
-    // (right - left + 1) is current window size
+    maxLen = Math.max(maxLen, right - left + 1);
 }
 ```
 
 Everything else is a variation of this skeleton.
 
 ---
-
-## Question 1 — Longest Substring Without Repeating Characters
-
-**"Given a string, find the length of the longest substring without repeating characters."**
-```
-Input:  "abcabcbb"    Output: 3   ("abc")
-Input:  "bbbbb"       Output: 1   ("b")
-Input:  "pwwkew"      Output: 3   ("wke")
-Input:  ""            Output: 0
-Constraints: O(n) time. String may contain any ASCII character.
-Things to think through:
-
-What tracks which characters are currently in your window?
-When you find a duplicate at right, do you move left by 1, or jump it directly to last position of duplicate + 1? Both work — which is faster in practice and why?
-A HashSet works but there's a smarter structure. What is it and what does it buy you?
-
-Post your solution when ready.
-

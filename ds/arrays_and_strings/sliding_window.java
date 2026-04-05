@@ -1,33 +1,102 @@
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 
 public class sliding_window {
     public static void main(String[] args) {
 
-        System.out.println(longest_subarray_with_sum_k(new int[]{10, 2, 3}, 5));
+        System.out.println(longest_subarray_with_atomost_k_distinct("araaci", 2));
     }
 
+   /** 
+    * Q5: Given a binary array and integer k, find the maximum number of consecutive 1s if you can flip at most k zeros."
+        Input:  arr = [1,1,0,0,1,1,1,0,1,1], k = 2
+        Output: 9   (flip zeros at index 2 and 7)
 
-    public static int longest_subarray_with_atomost_k_distinct(int[] arr, int k){
+        Input:  arr = [0,0,1,1,1,0,0,1,1,1], k = 2
+        Output: 7   (flip zeros at index 5 and 6)
+
+        Input:  arr = [1,1,1,1,1], k = 0
+        Output: 5   (no flips needed)
+
+        Input:  arr = [0,0,0], k = 0
+        Output: 0
+    */ 
+    public static int maxConsecutiveOnesWithKFlips(int[] arr, int k){
+
+        if (arr == null || arr.length == 0) return 0;
+        
         int left = 0;
-        int currentSum = 0;
         int maxLen = 0;
+        int zeroCount = 0;
 
-        for(int right=0; right<arr.length; right++){
-            currentSum += arr[right];
-            while (currentSum>k){
-                currentSum -= arr[left];
+        for (int right=0; right<arr.length;right++){
+            int current = arr[right];
+
+            if (current == 0){ // ✅ expand — track zeros
+                zeroCount++;
+            } 
+
+            while (zeroCount>k) { // ✅ shrink while invalid
+                if (arr[left] == 0){ // ✅ only decrement if leaving a zero
+                    zeroCount--;
+                }
                 left++;
             }
 
+            maxLen = Math.max(maxLen, right-left+1); // ✅ update after shrink
+        }
+
+        return maxLen;
+    }
+
+
+    /**
+     * Sliding Window Q4 — Longest Subarray with At Most K Distinct Characters
+        "Given a string s and integer k, find the length of the longest substring that contains at most k distinct characters."
+        Input:  s = "araaci", k = 2
+        Output: 4   ("araa")
+
+        Input:  s = "araaci", k = 1
+        Output: 2   ("aa")
+
+        Input:  s = "cbbebi", k = 3
+        Output: 5   ("cbbeb" or "bbebi")
+
+        Input:  s = "", k = 2
+        Output: 0
+     * @param s
+     * @param k
+     * @return
+     */
+    public static int longest_subarray_with_atomost_k_distinct(String s, int k){
+        Map<Character, Integer> map = new HashMap<>();
+        int left = 0;
+        int maxLen = 0;
+    
+        for(int right=0; right<s.length(); right++){
+            char element = s.charAt(right);
+            // 1. Add incoming element first
+            map.merge(element, 1, Integer::sum);
+
+            // 2. Then shrink if violated
+            while (map.size()>k){
+                map.merge(s.charAt(left), -1, Integer::sum);
+                if (map.get(s.charAt(left))==0){
+                    map.remove(s.charAt(left));
+                }
+                left++;
+            }
+
+            // 3. Window guaranteed valid here
             maxLen = Math.max(maxLen, right-left+1);
         }
 
         return maxLen;
     }
     /**
-     * "Given strings s and t, find the minimum length substring of s that contains all characters of t. If none exists return "".
+     * "Q2 Given strings s and t, find the minimum length substring of s that contains all characters of t. If none exists return "".
      *  Input:  s = "ADOBECODEBANC", t = "ABC"
         Output: "BANC"
 
@@ -81,7 +150,7 @@ public class sliding_window {
     }
 
      /**
-     * #Given a string, find the length of the longest substring without repeating characters."**
+     * #Q1 Given a string, find the length of the longest substring without repeating characters."**
      *  Input:  "abcabcbb"    Output: 3   ("abc")
         Input:  "bbbbb"       Output: 1   ("b")
         Input:  "pwwkew"      Output: 3   ("wke")
