@@ -488,3 +488,241 @@ for (int right = 0; right < n; right++) {
 Everything else is a variation of this skeleton.
 
 ---
+
+# Prefix Sum — Deep Dive
+
+## The Core Insight
+
+Every range sum query on an array has an O(n) brute force — loop from i to j and add. If you have multiple queries, that's O(n) per query.
+
+Prefix sum pays O(n) once upfront, then answers every range query in O(1).
+
+```
+arr:    [ 3,  1,  4,  2,  5,  7]
+idx:      0   1   2   3   4   5
+
+prefix: [ 0,  3,  4,  8, 10, 15, 22]
+idx:      0   1   2   3   4   5   6
+
+Rule:   prefix[i] = prefix[i-1] + arr[i-1]
+        prefix[0] = 0  ← sentinel, always
+
+Range sum query [l, r] (both inclusive, 0-indexed):
+        sum = prefix[r+1] - prefix[l]
+
+Example: sum(arr[2..4]) = prefix[5] - prefix[2] = 15 - 4 = 11
+Check:   4 + 2 + 5 = 11 ✓
+```
+
+**Why the sentinel `prefix[0] = 0`?**
+Without it, querying from index 0 breaks — `prefix[0+1] - prefix[0]` would be `3 - 3 = 0` instead of `3`. The sentinel makes every query uniform with no special cases.
+
+---
+
+## Building Prefix Array in Java
+
+```java
+int n = arr.length;
+int[] prefix = new int[n + 1];   // size n+1 for sentinel
+prefix[0] = 0;
+
+for (int i = 1; i <= n; i++) {
+    prefix[i] = prefix[i - 1] + arr[i - 1];
+}
+
+// Query: sum of arr[l..r] inclusive, 0-indexed
+int rangeSum = prefix[r + 1] - prefix[l];
+```
+
+---
+
+## The Killer Combo — Prefix Sum + HashMap
+
+This unlocks a whole class of problems that seem O(n²) but are actually O(n). The pattern:
+
+```
+sum(i..j) = k
+→ prefix[j+1] - prefix[i] = k
+→ prefix[i] = prefix[j+1] - k
+
+So as you scan right, maintaining currentSum:
+"How many indices i exist where prefix[i] = currentSum - k?"
+Each such index = one valid subarray ending at current position.
+
+Store prefix sums in a HashMap as you go.
+```
+
+---
+
+Let me go even more basic. Forget code, forget maps. Just math first.
+
+## Why Does `currentSum - k` Give You a Valid Subarray?
+
+Picture the array as a number line of cumulative sums:
+
+```
+arr      =  [1,  2,  3,  2,  1]
+             0   1   2   3   4   ← indices
+
+prefix   =  [0,  1,  3,  6,  8,  9]
+             p0  p1  p2  p3  p4  p5
+```
+
+A subarray from index `i` to index `j` has sum:
+
+```
+sum(i..j) = prefix[j+1] - prefix[i]
+```
+
+You want this to equal `k`. So:
+
+```
+prefix[j+1] - prefix[i] = k
+```
+
+Draw this as a physical gap on the number line:
+
+```
+prefix: 0───1───3───6───8───9
+                ↑       ↑
+                p2=3    p4=8
+
+gap = 8 - 3 = 5 = k ✅
+this gap represents subarray arr[2..3] = [3, 2]
+```
+
+**Every valid subarray is just a gap of exactly size k between two prefix values.**
+
+---
+
+## So the Question Becomes
+
+You're standing at position `j`, prefix sum is `currentSum`. You want to know:
+
+```
+Has any EARLIER prefix sum been exactly (currentSum - k)?
+
+If yes → the gap between that earlier point and now = k
+       → that gap is a valid subarray
+```
+
+Concrete example, standing at j=3, currentSum=8, k=5:
+
+```
+prefix: 0───1───3───6───8
+                    ↑   ↑
+              looking   standing here
+              for 3      (8-5=3)
+
+Gap = 8 - 3 = 5 = k ✅
+Subarray = arr[2..3] = [3, 2]
+```
+
+---
+
+## Your Question — Which Array Positions?
+
+You asked: **"how does it tell which array positions are meeting the requirement?"**
+
+**It doesn't — and that's intentional.**
+
+The problem only asks for the **count** of valid subarrays, not which ones. The HashMap tells you how many earlier prefix sums matched, not where they were.
+
+```
+count += map.getOrDefault(currentSum - k, 0)
+```
+
+This says: **"how many times has this exact prefix sum appeared before?"** Each occurrence = one valid subarray ending at current position j.
+
+If you needed the actual positions, you'd store a list of indices instead of a count. But for count problems, the number is enough.
+
+---
+
+## Tiny Example — Full Trace, Very Slow
+
+```
+arr = [1, 1, 1], k = 2
+
+Question: how many subarrays sum to 2?
+Answer should be: 2  → [1,1] starting at index 0, and [1,1] starting at index 1
+```
+
+```
+Start: map = {0:1}, currentSum = 0, count = 0
+
+────────────────────────────────
+Step j=0, num=1:
+  currentSum = 0 + 1 = 1
+  
+  looking for currentSum - k = 1 - 2 = -1
+  -1 in map? NO → count += 0 → count = 0
+  
+  store currentSum: map = {0:1, 1:1}
+  
+  prefix line so far: 0───1
+────────────────────────────────
+Step j=1, num=1:
+  currentSum = 1 + 1 = 2
+  
+  looking for currentSum - k = 2 - 2 = 0
+  0 in map? YES, count=1 → count += 1 → count = 1
+  
+  which subarray? gap from prefix[0]=0 to here=2 → arr[0..1] = [1,1] ✅
+  
+  store currentSum: map = {0:1, 1:1, 2:1}
+  
+  prefix line so far: 0───1───2
+────────────────────────────────
+Step j=2, num=1:
+  currentSum = 2 + 1 = 3
+  
+  looking for currentSum - k = 3 - 2 = 1
+  1 in map? YES, count=1 → count += 1 → count = 2
+  
+  which subarray? gap from prefix[1]=1 to here=3 → arr[1..2] = [1,1] ✅
+  
+  store currentSum: map = {0:1, 1:1, 2:1, 3:1}
+────────────────────────────────
+
+Answer: 2 ✅
+```
+
+---
+
+## The One Sentence Summary
+
+```
+At every position j, you ask:
+"How many times have I seen the prefix sum (currentSum - k) before?"
+
+Each time you saw it = one valid subarray ending right here at j.
+```
+
+The HashMap is just a memory of every prefix sum you've passed through, with a count of how many times you've seen each one.
+
+---
+## Question 1 — Subarray Sum Equals K
+
+**"Given an integer array and integer `k`, return the count of subarrays whose sum equals k."**
+
+```
+Input:  arr = [1, 2, 3, 2, 1, 5], k = 5
+Output: 3   ([2,3], [3,2], [5])
+
+Input:  arr = [1, 1, 1], k = 2
+Output: 2   ([1,1] twice)
+
+Input:  arr = [-1, 2, 3, -2, 4], k = 3
+Output: 3   (works with negatives too)
+```
+
+**Constraints:** O(n) time, O(n) space. Array may contain negative numbers — so sliding window won't work here, prefix sum is the only O(n) approach.
+
+**Why sliding window fails with negatives:** Sliding window relies on a monotone property — adding elements always increases sum, so you know when to shrink. Negatives break this — adding an element can decrease sum, so shrinking from left is no longer a reliable decision.
+
+**Things to think through:**
+- What goes in the HashMap — what is the key, what is the value?
+- Why do you initialise `map.put(0, 1)` before the loop?
+- What do you look up in the map at each step?
+
+Post your solution when ready.
