@@ -1,9 +1,10 @@
+import java.util.HashMap;
 import java.util.Map;
 
 public class prefix_sum {
     public static void main(String[] args) {
 
-        System.out.println(longest_subarray_with_atomost_k_distinct("araaci", 2));
+        //System.out.println(longest_subarray_with_atomost_k_distinct("araaci", 2));
     }
 
     /** 
@@ -32,10 +33,10 @@ public class prefix_sum {
             int remainder = ((currentSum % k) + k) % k;
 
             // Each previous occurrence of same remainder = one valid subarray
-            count += remainderCount.getOrDefault(remainder, 0);
+            //count += remainderCount.getOrDefault(remainder, 0);
 
             // Store remainder — same variable, consistent
-            remainderCount.merge(remainder, 1, Integer::sum);
+            //remainderCount.merge(remainder, 1, Integer::sum);
            
         }
         return count;
