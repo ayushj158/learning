@@ -1123,3 +1123,372 @@ class LRUCache {
 - When evicting — why do you need the key stored in the node?
 
 Take your time — this is the hardest linked list problem. Post when ready.
+
+
+# Merge K Sorted Lists — Deep Dive
+
+## The Problem
+
+**"Given an array of k sorted linked lists, merge them all into one sorted linked list and return the head."**
+
+```
+Input:  [
+          1 → 4 → 7 → null,
+          2 → 5 → 8 → null,
+          3 → 6 → 9 → null
+        ]
+Output: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → null
+
+Input:  [
+          1 → 3 → 5 → null,
+          2 → 4 → null
+        ]
+Output: 1 → 2 → 3 → 4 → 5 → null
+
+Input:  []
+Output: null
+
+Input:  [null, 1→2→null]
+Output: 1 → 2 → null
+```
+
+**Constraints:** O(n log k) time where n = total nodes, k = number of lists.
+
+---
+
+## Why Not Reuse Merge Two Lists Repeatedly?
+
+You already know how to merge two sorted lists. Naive approach — merge list 1 and 2, then merge result with 3, then with 4...
+
+```
+k=4 lists, n total nodes
+
+merge L1+L2     → O(n)
+merge result+L3 → O(n)
+merge result+L4 → O(n)
+
+Total: O(k×n)   ← too slow for large k
+```
+
+Every merge touches the already-merged nodes again. You're reprocessing the same nodes k times.
+
+---
+
+## The Right Tool — Min Heap
+
+A min heap always gives you the smallest element in O(log k). The insight:
+
+```
+At any point you have k candidate nodes — 
+one from the front of each list.
+You always want the smallest one next.
+That's exactly what a min heap does.
+```
+
+Algorithm:
+
+```
+1. Push head of every list into min heap
+2. Poll smallest node from heap → add to result
+3. If that node has a next → push next into heap
+4. Repeat until heap empty
+```
+
+Trace:
+
+```
+Lists:
+L1: 1→4→7
+L2: 2→5→8
+L3: 3→6→9
+
+Heap initially: [1,2,3]  (heads of all lists)
+
+Poll 1 → result: 1, push 4 → heap: [2,3,4]
+Poll 2 → result: 1→2, push 5 → heap: [3,4,5]
+Poll 3 → result: 1→2→3, push 6 → heap: [4,5,6]
+Poll 4 → result: 1→2→3→4, push 7 → heap: [5,6,7]
+Poll 5 → result: 1→2→3→4→5, push 8 → heap: [6,7,8]
+Poll 6 → result: 1→2→3→4→5→6, push 9 → heap: [7,8,9]
+Poll 7 → result: ..→7, no next → heap: [8,9]
+Poll 8 → result: ..→8, no next → heap: [9]
+Poll 9 → result: ..→9, no next → heap: []
+
+Done: 1→2→3→4→5→6→7→8→9 ✅
+```
+
+---
+
+## Complexity
+
+```
+Heap size at any time: at most k nodes
+Each poll/push operation: O(log k)
+Total nodes processed: n
+
+Total time: O(n log k)   ← much better than O(nk)
+Space: O(k)              ← heap holds at most k nodes
+```
+
+---
+
+## The Java Heap Setup
+
+Java's `PriorityQueue` is a min heap by default. You need a custom comparator for `ListNode`:
+
+```java
+PriorityQueue<ListNode> heap = new PriorityQueue<>(
+    (a, b) -> a.val - b.val   // min heap by node value
+);
+```
+
+---
+
+## Now Write It
+
+```java
+public static ListNode mergeKLists(ListNode[] lists) {
+    // your code here
+}
+```
+
+**Things to think through:**
+- What do you push into the heap initially?
+- What is the loop condition?
+- When do you push a node's next into the heap?
+- What handles null lists in the input array?
+
+Post your solution when ready.
+
+___
+# Heaps
+
+# Heap — From Scratch
+
+## What Is a Heap?
+
+A heap is a **complete binary tree** with one rule:
+
+**Min Heap:** Every parent is smaller than its children.
+**Max Heap:** Every parent is larger than its children.
+
+```
+Min Heap:
+        1
+       / \
+      3   2
+     / \ / \
+    7  4 5  6
+
+Rule: parent < both children — always
+Root is ALWAYS the smallest element
+```
+
+That one rule gives you something powerful — **you always know where the smallest element is. It's at the root. O(1) access.**
+
+---
+
+## What Operations Does a Heap Support?
+
+```
+peek()   → see the min element      O(1)
+poll()   → remove the min element   O(log n)
+add()    → insert a new element     O(log n)
+size()   → count of elements        O(1)
+```
+
+## That's it. A heap is not for searching. Not for random access. Only for repeatedly getting the minimum (or maximum) efficiently.
+
+---
+
+## How Does It Work Physically?
+
+### Adding an Element — "Bubble Up"
+
+Add at the bottom, then bubble up until heap rule is satisfied:
+
+```
+Add 1 to this heap:
+        2
+       / \
+      3   4
+
+Step 1 — add at bottom:
+        2
+       / \
+      3   4
+     /
+    1
+
+Step 2 — 1 < parent(3) → swap:
+        2
+       / \
+      1   4
+     /
+    3
+
+Step 3 — 1 < parent(2) → swap:
+        1
+       / \
+      2   4
+     /
+    3
+
+Done. Heap rule satisfied.
+```
+
+### Removing Min — "Bubble Down"
+
+Remove root, put last element at root, bubble down:
+
+```
+Remove min from:
+        1
+       / \
+      2   4
+     /
+    3
+
+Step 1 — remove root, put last element there:
+        3
+       / \
+      2   4
+
+Step 2 — 3 > smaller child(2) → swap:
+        2
+       / \
+      3   4
+
+Done. Heap rule satisfied.
+```
+
+---
+
+## How Is It Stored in Memory?
+
+Here's the clever part — a heap is stored as a **flat array**, not as tree nodes with pointers:
+
+```
+        1
+       / \
+      3   2
+     / \
+    7   4
+
+Array: [1, 3, 2, 7, 4]
+        0  1  2  3  4
+
+For any index i:
+  parent     = (i-1) / 2
+  leftChild  = 2*i + 1
+  rightChild = 2*i + 2
+```
+
+No pointers needed. The math gives you the tree structure for free.
+
+---
+
+## Why Is Poll O(log n)?
+
+The tree has height log n (it's complete and balanced). Bubble down travels at most from root to leaf — that's log n swaps.
+
+```
+n=8 nodes → height=3 → at most 3 swaps to bubble down
+n=1000000 → height=20 → at most 20 swaps
+```
+
+This is why heap is so powerful — even with a million elements, you find and remove the minimum in 20 operations.
+
+---
+
+## Heap vs Sorted Array vs LinkedList
+
+| Operation | Sorted Array | Sorted LinkedList | Heap |
+|---|---|---|---|
+| Find min | O(1) | O(1) | O(1) |
+| Remove min | O(n) shift | O(1) | O(log n) |
+| Insert | O(n) shift | O(n) search | O(log n) |
+
+##Heap wins when you need **repeated min/max extraction with frequent insertions.**
+
+---
+
+## Java PriorityQueue — The Heap Implementation
+
+```java
+// Min heap — default
+PriorityQueue<Integer> minHeap = new PriorityQueue<>();
+
+// Max heap — reverse comparator
+PriorityQueue<Integer> maxHeap = new PriorityQueue<>(Collections.reverseOrder());
+
+// Custom comparator — min heap by string length
+PriorityQueue<String> heap = new PriorityQueue<>((a, b) -> a.length() - b.length());
+
+// Operations
+minHeap.add(5);        // insert — O(log n)
+minHeap.peek();        // see min without removing — O(1)
+minHeap.poll();        // remove and return min — O(log n)
+minHeap.size();        // count — O(1)
+minHeap.isEmpty();     // check empty — O(1)
+```
+
+---
+
+## Concrete Example — Top 3 Smallest Numbers
+
+```java
+int[] arr = {5, 2, 8, 1, 9, 3, 7};
+PriorityQueue<Integer> heap = new PriorityQueue<>();
+
+for (int n : arr) heap.add(n);
+// heap internally: [1, 2, 7, 5, 9, 8, 3] (array representation)
+// but logically always gives you the min first
+
+System.out.println(heap.poll()); // 1
+System.out.println(heap.poll()); // 2
+System.out.println(heap.poll()); // 3
+```
+
+No sorting needed. Heap does it in O(n log n) — same as sort, but you get elements one by one on demand.
+
+---
+
+## The Key Mental Model
+
+**Think of a heap as a magic bag:**
+- You throw numbers in randomly
+- Every time you reach in, you always pull out the smallest one
+- Insertion and extraction both cost O(log n)
+
+That's it. Don't think about the tree structure when using it. Just know:
+- `add()` → throw something in
+- `poll()` → pull out the smallest
+- `peek()` → look at the smallest without removing
+
+---
+
+# When Do You Reach for a Heap?
+
+```
+"Find the k largest / k smallest elements"     → heap
+"Merge k sorted lists"                         → heap
+"Always process the minimum next"              → heap
+"Median from a stream"                         → two heaps
+"Task scheduling by priority"                  → heap
+```
+
+The signal phrase is: **"at each step, I need the current minimum (or maximum)"**
+
+---
+
+Now that you understand what a heap is — go back and try **merge k sorted lists**. The algorithm is:
+
+```
+1. Push all list heads into min heap
+2. Poll min → attach to result
+3. Push polled node's next into heap
+4. Repeat until heap empty
+```
+
+Post your solution when ready.
