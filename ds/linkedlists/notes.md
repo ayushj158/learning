@@ -1492,3 +1492,261 @@ Now that you understand what a heap is — go back and try **merge k sorted list
 ```
 
 Post your solution when ready.
+
+
+# Comparator — From Scratch
+
+## What Is a Comparator?
+
+A comparator is a function that answers one question:
+
+**"Between A and B, which one should come first?"**
+
+The answer is a number:
+```
+negative → A comes first
+zero     → they're equal
+positive → B comes first
+```
+
+That's the entire contract. The heap uses this to decide ordering.
+
+---
+
+## The Equation `a - b`
+
+```java
+(a, b) -> a - b
+```
+
+Walk through every case:
+
+```
+a=3, b=5 → 3-5 = -2 → negative → a comes first → 3 before 5 → SMALLER first
+a=5, b=3 → 5-3 = +2 → positive → b comes first → 3 before 5 → SMALLER first
+a=3, b=3 → 3-3 =  0 → equal    → doesn't matter
+```
+
+Result: smaller numbers come first → **Min Heap**
+
+---
+
+## The Equation `b - a`
+
+```java
+(a, b) -> b - a
+```
+
+Walk through every case:
+
+```
+a=3, b=5 → 5-3 = +2 → positive → b comes first → 5 before 3 → LARGER first
+a=5, b=3 → 3-5 = -2 → negative → a comes first → 5 before 3 → LARGER first
+a=3, b=3 → 3-3 =  0 → equal    → doesn't matter
+```
+
+Result: larger numbers come first → **Max Heap**
+
+---
+
+## Memory Trick
+
+```
+a - b → alphabetical → a before b → ascending → Min Heap
+b - a → reverse      → b before a → descending → Max Heap
+```
+
+---
+
+## Concrete Java Examples
+
+```java
+// Min heap — poll() always gives smallest
+PriorityQueue<Integer> minHeap = new PriorityQueue<>((a, b) -> a - b);
+minHeap.add(5);
+minHeap.add(1);
+minHeap.add(3);
+minHeap.poll(); // 1 ← smallest
+
+// Max heap — poll() always gives largest  
+PriorityQueue<Integer> maxHeap = new PriorityQueue<>((a, b) -> b - a);
+maxHeap.add(5);
+maxHeap.add(1);
+maxHeap.add(3);
+maxHeap.poll(); // 5 ← largest
+```
+
+---
+
+## Custom Objects — ListNode Example
+
+```java
+// Min heap by node value — smallest val polled first
+PriorityQueue<ListNode> heap = new PriorityQueue<>((a, b) -> a.val - b.val);
+
+// Max heap by node value — largest val polled first
+PriorityQueue<ListNode> heap = new PriorityQueue<>((a, b) -> b.val - a.val);
+```
+
+Same rule — just swap `a` and `b` to flip between min and max.
+
+---
+
+## What If Values Are Large — Overflow Risk?
+
+```java
+a = Integer.MAX_VALUE = 2147483647
+b = Integer.MIN_VALUE = -2147483648
+
+a - b = 2147483647 - (-2147483648) = 4294967295 → overflows int ❌
+```
+
+Safe alternative for large values:
+
+```java
+// Instead of a - b
+Integer.compare(a, b)   // min heap, overflow safe
+
+// Instead of b - a
+Integer.compare(b, a)   // max heap, overflow safe
+```
+
+For interview problems with normal constraints `a - b` is fine. For production code always use `Integer.compare`.
+
+---
+
+## Quick Reference
+
+| Goal | Comparator | Poll gives |
+|---|---|---|
+| Min heap | `(a,b) -> a - b` | Smallest |
+| Max heap | `(a,b) -> b - a` | Largest |
+| Min heap safe | `Integer.compare(a,b)` | Smallest |
+| Max heap safe | `Integer.compare(b,a)` | Largest |
+| By string length min | `(a,b) -> a.length()-b.length()` | Shortest |
+| By node val min | `(a,b) -> a.val-b.val` | Smallest val |
+
+---
+
+Now you have everything you need for merge k lists. Go ahead and write it.
+
+# Code Review — Merge K Sorted Lists
+
+## Verdict: Perfect ✅
+
+Clean, correct, complete. This is a senior-level solution.
+
+---
+
+## Correctness Check
+
+```java
+// Phase 1 — seed heap with all list heads
+for (Linkedlists.ListNode listHead : lists) {
+    if (listHead != null) {          // ✅ handles null lists in array
+        minHeap.add(listHead);
+    }
+}
+
+// Phase 2 — always pick smallest, push its next
+while (!minHeap.isEmpty()) {
+    ListNode smallest = minHeap.poll();        // ✅ always minimum
+    if (smallest.next != null) {               // ✅ null check before push
+        minHeap.add(smallest.next);
+    }
+    current.next = smallest;                   // ✅ attach to result
+    current = current.next;                    // ✅ advance pointer
+}
+
+return dummy.next;                             // ✅ skip dummy
+```
+
+Every line is right. Nothing to fix.
+
+---
+
+## What You Got Right That Many Candidates Miss
+
+**1. Null check when seeding:**
+```java
+if (listHead != null) minHeap.add(listHead);
+```
+Many candidates push null into the heap and get NullPointerException when the comparator tries `a.val`.
+
+**2. Null check before pushing next:**
+```java
+if (smallest.next != null) minHeap.add(smallest.next);
+```
+Without this you'd push null into the heap — same crash.
+
+**3. Dummy node — used correctly:**
+Attach nodes to result first, then advance `current`. Same pattern as merge two lists, applied correctly here.
+
+---
+
+## Only Two Things Missing — Same Habits
+
+```java
+// 1. Null/empty guard at top
+if (lists == null || lists.length == 0) return null;
+
+// 2. Naming — class name
+MergeKSortedListsHeap  ✅  // actually fine, descriptive
+```
+
+Only the null guard is missing. Everything else is clean.
+
+---
+
+## Complexity — Say This Out Loud
+
+> "I seed the heap with k nodes — one head per list. Each poll and push is O(log k) since the heap never holds more than k nodes at once. I process all n nodes total. So time complexity is O(n log k). Space is O(k) for the heap."
+
+**The key insight to emphasise:** heap size never exceeds k. You remove one node and add at most one back. That's why it's log k not log n.
+
+---
+
+## Score Card
+
+| Dimension | Your Solution | Senior Bar |
+|---|---|---|
+| Core heap logic | ✅ Perfect | ✅ |
+| Null lists in input | ✅ Handled | ✅ |
+| Null next before push | ✅ Handled | ✅ |
+| Dummy node pattern | ✅ Correct | ✅ |
+| Comparator | ✅ Correct | ✅ |
+| Empty input guard | ❌ Missing | ✅ |
+| Complexity reasoning | say it out loud | ✅ |
+
+---
+
+## Linked Lists — Complete
+
+| Question | Status |
+|---|---|
+| Reverse list — iterative | ✅ |
+| Reverse list — recursive | ⏸ Parked |
+| Find middle | ✅ |
+| Detect cycle | ✅ |
+| Nth from end | ✅ |
+| Merge two sorted lists | ✅ |
+| LRU Cache | ✅ |
+| Merge K sorted lists | ✅ |
+
+---
+
+## Trend Across All Solutions
+
+Looking at your last 4 solutions — find middle, detect cycle, LRU cache, merge k lists — the core logic has been correct every time. The only consistent gap is the null guard at the top.
+
+Make this your ritual — before writing any logic, write this first:
+
+```java
+if (input == null || input.length == 0) return defaultValue;
+```
+
+Then write the rest. It takes 3 seconds and closes your only remaining habit gap.
+
+---
+
+**Stacks & Queues next?**
