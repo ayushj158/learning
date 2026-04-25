@@ -858,3 +858,225 @@ b-a → b wins when smaller → a wins when LARGER → MAX heap
 Got it locked in now? Graphs next?
 
 Ready for **Graphs** or one more HashMap question?
+
+
+# HashMap — Complete Summary
+
+## Core Operations — Complexity
+
+| Operation | Average | Worst Case | Notes |
+|---|---|---|---|
+| get(key) | O(1) | O(n) | worst case all keys collide |
+| put(key, val) | O(1) | O(n) | Java 8+ → O(log n) with tree |
+| remove(key) | O(1) | O(n) | |
+| containsKey(key) | O(1) | O(n) | |
+| size() | O(1) | O(1) | |
+
+---
+
+## Java Internals — What Goldman Will Ask
+
+```
+Initial capacity:    16 buckets
+Load factor:         0.75
+Resize trigger:      size > capacity × 0.75
+Resize cost:         O(n) amortized O(1)
+Collision handling:  Chaining (LinkedList)
+Java 8 threshold:    chain > 8 nodes → Red-Black Tree → O(log n) worst case
+```
+
+---
+
+## The Five Patterns
+
+### Pattern 1 — Frequency Count
+```
+Signal: "most frequent", "duplicates", "anagram", "count occurrences"
+
+Template:
+Map<Integer, Integer> freq = new HashMap<>();
+for (int num : arr) {
+    freq.compute(num, (k, v) -> v == null ? 1 : v + 1);
+}
+
+Problems:
+  Top K frequent elements
+  Valid anagram
+  First unique character
+```
+
+### Pattern 2 — Complement Lookup (Two Sum)
+```
+Signal: "pair summing to", "two elements that equal target"
+
+Template:
+Map<Integer, Integer> seen = new HashMap<>();  // value → index
+for (int i = 0; i < arr.length; i++) {
+    int complement = target - arr[i];
+    if (seen.containsKey(complement))
+        return new int[]{seen.get(complement), i};
+    seen.put(arr[i], i);
+}
+
+Key rule: lookup BEFORE store — avoid using same element twice
+
+Problems:
+  Two Sum
+  Four Sum
+  Pair with given difference
+```
+
+### Pattern 3 — Grouping
+```
+Signal: "group by", "anagrams together", "same property"
+
+Template:
+Map<String, List<String>> groups = new HashMap<>();
+for (String s : arr) {
+    String key = computeKey(s);   // e.g. sorted string for anagrams
+    groups.computeIfAbsent(key, k -> new ArrayList<>()).add(s);
+}
+return new ArrayList<>(groups.values());
+
+Key method: computeIfAbsent — get or create list in one line
+
+Problems:
+  Group anagrams
+  Group by first letter
+  Group by frequency
+```
+
+### Pattern 4 — Prefix Sum + HashMap
+```
+Signal: "subarray sum equals k", "contiguous elements summing to"
+
+Template:
+Map<Integer, Integer> prefixCount = new HashMap<>();
+prefixCount.put(0, 1);   // sentinel — critical
+int currentSum = 0;
+int count = 0;
+for (int num : arr) {
+    currentSum += num;
+    count += prefixCount.getOrDefault(currentSum - k, 0);
+    prefixCount.merge(currentSum, 1, Integer::sum);
+}
+
+Key rules:
+  sentinel {0:1} handles subarrays starting at index 0
+  lookup before store
+  for divisibility: remainder = ((sum % k) + k) % k  ← handles negatives
+
+Problems:
+  Subarray sum equals k
+  Subarrays divisible by k
+  Count of range sum
+```
+
+### Pattern 5 — Sliding Window + HashMap
+```
+Signal: "longest substring with", "window containing at most k"
+
+Template:
+Map<Character, Integer> window = new HashMap<>();
+int left = 0, maxLen = 0;
+for (int right = 0; right < s.length(); right++) {
+    window.merge(s.charAt(right), 1, Integer::sum);   // add right
+    while (window invalid) {
+        char lc = s.charAt(left);
+        window.merge(lc, -1, Integer::sum);
+        if (window.get(lc) == 0) window.remove(lc);  // clean up zeros
+        left++;
+    }
+    maxLen = Math.max(maxLen, right - left + 1);
+}
+
+Problems:
+  Longest substring without repeating chars
+  At most k distinct characters
+  Minimum window substring
+```
+
+---
+
+## Key Methods — Cheat Sheet
+
+```java
+// Basic
+map.put(key, val)
+map.get(key)                              // null if missing
+map.getOrDefault(key, 0)                 // safe get with default
+map.containsKey(key)
+map.remove(key)
+
+// Frequency counting
+map.compute(key, (k,v) -> v==null ? 1 : v+1)   // elegant increment
+map.merge(key, 1, Integer::sum)                  // cleaner increment
+
+// Grouping
+map.computeIfAbsent(key, k -> new ArrayList<>()).add(item)
+
+// Iteration
+for (Map.Entry<K,V> entry : map.entrySet())
+    entry.getKey(), entry.getValue()
+map.values()                              // all values
+map.keySet()                              // all keys
+
+// Return all groups
+return new ArrayList<>(map.values());
+```
+
+---
+
+## Comparator Reference — For Heap + HashMap Combos
+
+```java
+(a, b) -> a - b    // MIN heap — smallest at top — ascending
+(a, b) -> b - a    // MAX heap — largest at top  — descending
+
+// Safe version for large values:
+Integer.compare(a, b)    // min heap
+Integer.compare(b, a)    // max heap
+```
+
+---
+
+## Problems Solved
+
+| Problem | Pattern | Time | Space |
+|---|---|---|---|
+| Two Sum | Complement lookup | O(n) | O(n) |
+| Group Anagrams | Grouping | O(n k log k) | O(n) |
+| Longest Consecutive | HashSet lookup | O(n) | O(n) |
+| Top K Frequent | Frequency + Heap | O(n log k) | O(n) |
+| Subarray Sum = k | Prefix + HashMap | O(n) | O(n) |
+| Subarrays div by k | Prefix + HashMap | O(n) | O(n) |
+| Longest no repeat | Sliding + HashMap | O(n) | O(n) |
+| At most k distinct | Sliding + HashMap | O(n) | O(n) |
+
+---
+
+## Recurring Mistakes To Avoid
+
+```
+1. Sentinel missing in prefix sum
+   → always put(0, 1) before loop
+
+2. Store before lookup in two sum
+   → always lookup first, store after
+
+3. Not cleaning zero counts in sliding window
+   → if (map.get(c) == 0) map.remove(c)
+
+4. Duplicate keys in toMap collector
+   → use computeIfAbsent instead
+
+5. Negative remainder in divisibility
+   → ((sum % k) + k) % k
+
+6. Null guard missing
+   → always first line
+```
+
+---
+
+Graphs next?
