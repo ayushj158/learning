@@ -3,7 +3,6 @@ package ds.stacks_queues;
 import java.util.Arrays;
 import java.util.Comparator;
 
-import ds.linkedlists.Linkedlists.ListNode;
 
 public class PQHeapGenerics<T> {
 
@@ -27,7 +26,7 @@ public class PQHeapGenerics<T> {
         // Min heap of strings by length
         PQHeapGenerics<String> byLength = new PQHeapGenerics<>(10, (a, b) -> a.length() - b.length());
         // Min heap of ListNode by val — exactly what merge k lists needs
-        PQHeapGenerics<ListNode> nodeHeap = new PQHeapGenerics<>(10, (a, b) -> a.val - b.val);
+        //PQHeapGenerics<ListNode> nodeHeap = new PQHeapGenerics<>(10, (a, b) -> a.val - b.val);
 
         pq.add(5);
         pq.add(3);
