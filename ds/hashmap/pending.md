@@ -1,1 +1,3 @@
 - check if a element exist in map and update values (value can be a list or integer); usage of compute and computeIfAbsent
+- Prefix Sum + HashMap
+- Sliding Window + HashMap
