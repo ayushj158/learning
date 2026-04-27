@@ -1080,3 +1080,647 @@ Integer.compare(b, a)    // max heap
 ---
 
 Graphs next?
+
+
+# Pattern 4 — Prefix Sum + HashMap
+
+## Quick Recap
+
+```
+sum(i..j) = k
+→ prefix[j] - prefix[i] = k
+→ prefix[i] = prefix[j] - k
+
+At each position: how many times has (currentSum - k) appeared before?
+Each occurrence = one valid subarray ending here.
+```
+
+---
+
+## Question 1 — Subarray Sum Equals K
+
+You already solved this. Write it from memory — no looking back.
+
+```java
+public static int subarraySum(int[] arr, int k) {
+
+}
+```
+
+**Three things from memory:**
+- Sentinel
+- What you look up
+- Lookup before or after store
+
+Post it.
+
+Perfect question. This is the exact thing that confuses everyone. Let me make it crystal clear.
+
+---
+
+## Your Concern — Subarrays Not Starting From 0
+
+```
+arr = [1, 2, 3, 2, 1], k = 5
+
+You're worried about subarrays like:
+[2, 3] — starts at index 1, ends at index 2
+[3, 2] — starts at index 2, ends at index 3
+
+How does the map find these?
+```
+
+---
+
+## The Key — Prefix Sum Is Cumulative
+
+```
+arr     = [1,  2,  3,  2,  1]
+index   =  0   1   2   3   4
+
+prefix sums as you scan:
+after index 0: currSum = 1
+after index 1: currSum = 3
+after index 2: currSum = 6
+after index 3: currSum = 8
+after index 4: currSum = 9
+```
+
+---
+
+## Subarray [2,3] — Indices 1 to 2
+
+```
+sum(1..2) = 2+3 = 5 = k ✅
+
+In prefix sum terms:
+sum(1..2) = currSum at index 2 - currSum at index 0
+          = 6 - 1 = 5 ✅
+
+So when you're at index 2, currSum=6:
+  looking for currSum - k = 6 - 5 = 1
+  has prefix sum 1 appeared before? YES — at index 0
+  → found subarray from index 1 to index 2 ✅
+```
+
+---
+
+## Subarray [3,2] — Indices 2 to 3
+
+```
+sum(2..3) = 3+2 = 5 = k ✅
+
+In prefix sum terms:
+sum(2..3) = currSum at index 3 - currSum at index 1
+          = 8 - 3 = 5 ✅
+
+So when you're at index 3, currSum=8:
+  looking for currSum - k = 8 - 5 = 3
+  has prefix sum 3 appeared before? YES — at index 1
+  → found subarray from index 2 to index 3 ✅
+```
+
+---
+
+## The Physical Meaning
+
+```
+When you're standing at index j, currSum = prefix[j]:
+
+"Has prefix sum (currSum - k) appeared before at some index i?"
+
+If YES:
+  prefix[j] - prefix[i] = k
+  → sum of elements from index i+1 to j = k
+  → valid subarray found ✅
+
+The GAP between two prefix sums = sum of elements between them
+```
+
+---
+
+## Full Trace — Every Subarray Found
+
+```
+arr = [1, 2, 3, 2, 1], k = 5
+map = {0:1}, currSum=0, count=0
+
+i=0, num=1: currSum=1
+  look for 1-5=-4 → not in map → count=0
+  map={0:1, 1:1}
+
+i=1, num=2: currSum=3
+  look for 3-5=-2 → not in map → count=0
+  map={0:1, 1:1, 3:1}
+
+i=2, num=3: currSum=6
+  look for 6-5=1 → IN MAP, count=1 → count=1
+  which subarray? gap from prefix=1(index 0) to here(index 2)
+  = arr[1..2] = [2,3] ✅
+  map={0:1, 1:1, 3:1, 6:1}
+
+i=3, num=2: currSum=8
+  look for 8-5=3 → IN MAP, count=1 → count=2
+  which subarray? gap from prefix=3(index 1) to here(index 3)
+  = arr[2..3] = [3,2] ✅
+  map={0:1, 1:1, 3:1, 6:1, 8:1}
+
+i=4, num=1: currSum=9
+  look for 9-5=4 → not in map → count=2
+  map={0:1, 1:1, 3:1, 6:1, 8:1, 9:1}
+
+Answer: 2 ✅
+Subarrays found: [2,3] and [3,2]
+```
+
+---
+
+## One Sentence Summary
+
+```
+The map stores every prefix sum seen so far.
+At index j, looking up (currSum - k) finds every earlier index i
+where the subarray from i+1 to j sums to exactly k.
+The map handles ALL subarrays — not just ones starting from 0.
+```
+
+Does this click now?
+
+
+Same concept as Pattern 4 — just with remainders instead of exact sums. Let me build it the same way.
+
+---
+
+## The Math First
+
+For exact sum we used:
+```
+sum(i..j) = k
+→ prefix[j] - prefix[i] = k
+→ prefix[j] - k = prefix[i]
+```
+
+For divisibility we use:
+```
+sum(i..j) divisible by k
+→ (prefix[j] - prefix[i]) % k = 0
+→ prefix[j] % k = prefix[i] % k
+
+Two prefix sums with SAME remainder → gap between them divisible by k
+```
+
+---
+
+## Concrete Example — Middle Subarray
+
+```
+arr = [4, 5, 0, -2, -3, 1], k = 5
+
+prefix sums:
+index 0: currSum=4,  remainder=4%5=4
+index 1: currSum=9,  remainder=9%5=4   ← same remainder as index 0!
+index 2: currSum=9,  remainder=9%5=4
+index 3: currSum=7,  remainder=7%5=2
+index 4: currSum=4,  remainder=4%5=4
+index 5: currSum=5,  remainder=5%5=0
+```
+
+When you're at index 1, remainder=4:
+```
+Has remainder 4 appeared before? YES — at index 0
+→ gap from index 0 to index 1
+→ arr[1..1] = [5]
+→ 5 % 5 = 0 ✅ divisible
+```
+
+When you're at index 2, remainder=4:
+```
+Has remainder 4 appeared before? YES — twice (index 0 and index 1)
+→ gap from index 0 to index 2 = arr[1..2] = [5,0] → 5%5=0 ✅
+→ gap from index 1 to index 2 = arr[2..2] = [0]   → 0%5=0 ✅
+map had remainder 4 count=2 → count += 2
+```
+
+When you're at index 4, remainder=4:
+```
+Has remainder 4 appeared? YES — three times now
+→ three more subarrays ending here all divisible by k
+```
+
+---
+
+## Why Same Remainder = Divisible Gap
+
+```
+prefix[j] % k = 4
+prefix[i] % k = 4
+
+prefix[j] - prefix[i] = ?
+
+Think of it this way:
+prefix[j] = a×k + 4   (some multiple of k, plus remainder 4)
+prefix[i] = b×k + 4   (some multiple of k, plus remainder 4)
+
+prefix[j] - prefix[i] = (a×k + 4) - (b×k + 4)
+                       = (a-b)×k
+                       = exact multiple of k ✅
+```
+
+The remainders cancel out. Whatever is left is a pure multiple of k.
+
+---
+
+## The Map Stores Remainder → Count
+
+```
+Not:  currSum → count      (exact sum, Pattern 4)
+But:  currSum%k → count    (remainder, Pattern 5)
+
+Same logic:
+  at index j with remainder r:
+  how many times has remainder r appeared before?
+  each occurrence = one valid subarray ending at j
+```
+
+---
+
+## Is It Clear Now?
+
+One sentence:
+
+```
+Two positions with same remainder → 
+gap between them is divisible by k →
+subarray between them is a valid answer
+```
+
+The map counts how many times each remainder has appeared — regardless of whether those positions are at the start, middle, or end of the array.
+
+Now write the solution. Same template as subarray sum = k, just change what you store and look up.
+
+
+# Code Review — Subarray Divisible By K
+
+## Verdict: Almost — One Bug ⚠️
+
+Core logic correct. Missing the negative remainder fix.
+
+---
+
+## The Bug — Negative Remainder
+
+```java
+int remainder = currSum % k;   // ❌ can be negative in Java
+```
+
+```
+currSum = -3, k = 5
+-3 % 5 = -3 in Java   ← negative
+
+map has {2: 1} stored from earlier
+looking up -3 → not found → miss valid subarray ❌
+```
+
+Fix:
+
+```java
+int remainder = ((currSum % k) + k) % k;   // always positive
+```
+
+---
+
+## Everything Else — Perfect
+
+```java
+prefixSum.put(0, 1);                              // ✅ sentinel
+result += prefixSum.getOrDefault(remainder, 0);   // ✅ single lookup
+prefixSum.merge(remainder, 1, (o, n) -> o + n);   // ✅ store after lookup
+```
+
+---
+
+## One Simplification — merge lambda
+
+```java
+prefixSum.merge(remainder, 1, (oldVal, newVal) -> oldVal + newVal);
+// same as:
+prefixSum.merge(remainder, 1, Integer::sum);   // cleaner
+```
+
+---
+
+## Corrected Solution
+
+```java
+public static int subarrayDivisibleByK(int[] arr, int k) {
+    if (arr == null || arr.length == 0) return 0;
+
+    Map<Integer, Integer> remainderCount = new HashMap<>();
+    remainderCount.put(0, 1);   // sentinel
+    int currSum = 0;
+    int count = 0;
+
+    for (int num : arr) {
+        currSum += num;
+        int remainder = ((currSum % k) + k) % k;   // ✅ always positive
+        count += remainderCount.getOrDefault(remainder, 0);
+        remainderCount.merge(remainder, 1, Integer::sum);
+    }
+
+    return count;
+}
+```
+
+---
+
+## Score Card
+
+| Dimension | Your Solution | Senior Bar |
+|---|---|---|
+| Sentinel | ✅ | ✅ |
+| Remainder as key | ✅ | ✅ |
+| Lookup before store | ✅ | ✅ |
+| Negative remainder fix | ❌ Missing | ✅ |
+| Null guard | ❌ Missing | ✅ |
+| merge lambda | ⚠️ verbose | ✅ Integer::sum |
+
+---
+
+## Pattern 4 Done ✅
+
+| Question | Status |
+|---|---|
+| Subarray sum equals k | ✅ |
+| Subarray divisible by k | ✅ |
+
+---
+
+Ready for **Pattern 5 — Sliding Window + HashMap**? You've already done two questions from this pattern — longest substring no repeats and at most k distinct. Want one fresh question to drill it, or move to Graphs?
+
+
+Great catch. Let me explain exactly what the sentinel counts and why it's not double counting.
+
+---
+
+## What Does Sentinel {0:1} Actually Represent?
+
+```
+prefixSum.put(0, 1)
+```
+
+This says: **"before we've seen any elements, the prefix sum is 0, and this has happened once."**
+
+It represents the **empty prefix** — the state before index 0.
+
+---
+
+## Without Sentinel — What Goes Wrong
+
+```
+arr = [5, 0, 3], k = 5
+
+currSum after index 0 = 5
+remainder = 5%5 = 0
+
+look up remainder 0 → not in map → count = 0 ❌
+but [5] is clearly divisible by 5!
+
+What happened?
+sum(0..0) = prefix[0] - prefix[before start]
+          = 5 - 0 = 5
+          = divisible by 5 ✅
+
+But "prefix before start = 0" isn't in the map → missed it ❌
+```
+
+---
+
+## With Sentinel — What It Counts
+
+```
+arr = [5, 0, 3], k = 5
+map = {0:1}   ← sentinel
+
+index 0, currSum=5, remainder=0:
+  look up 0 → found 1 time → count=1 ✅
+  which subarray? gap from "before start" to index 0
+  = arr[0..0] = [5] → 5%5=0 ✅
+
+The sentinel counts subarrays that start from index 0.
+```
+
+---
+
+## Is It Double Counting? No — Here's Why
+
+The sentinel is only looked up when `remainder == 0`. That means `currSum` is exactly divisible by k — meaning the entire subarray from index 0 to current index is divisible by k.
+
+```
+arr = [5, 5, 3], k = 5
+map = {0:1}
+
+index 0, currSum=5, remainder=0:
+  count += map[0] = 1   → counts [5] ✅
+  map = {0:1, 0:2} → map = {0:2}   ← sentinel now count=2
+
+index 1, currSum=10, remainder=0:
+  count += map[0] = 2   → counts [5,5] and [5] starting at index 1 ✅
+  map = {0:3}
+
+index 2, currSum=13, remainder=3:
+  count += map[3] = 0   → no match
+```
+
+Each lookup finds genuinely different subarrays. No double counting.
+
+---
+
+## One Sentence
+
+```
+Sentinel {0:1} = "the empty prefix exists once"
+It allows subarrays starting at index 0 to be found
+via the same lookup mechanism as all other subarrays.
+Without it you need a special case — with it everything is uniform.
+```
+
+Does this clear it up?
+
+
+Good. Now write **Pattern 5 — Sliding Window + HashMap** fresh question.
+
+---
+
+# Pattern 5 — Sliding Window + HashMap
+
+## Question — Longest Substring With At Most K Distinct Characters
+
+You already solved this one earlier. Write it from memory — no looking back.
+
+```java
+public static int longestSubstringKDistinct(String s, int k) {
+
+}
+```
+
+**Four things from memory:**
+- What the map stores
+- When window is invalid
+- How you shrink from left
+- When you remove from map
+
+Post it.
+
+
+# Code Review — Longest Substring K Distinct
+
+## Verdict: Wrong Approach ⚠️
+
+You used a Queue to track order of characters — but a Queue tracks insertion order, not the sliding window's left boundary correctly. This causes wrong answers.
+
+---
+
+## The Core Problem — Queue Doesn't Track Window Correctly
+
+```
+s = "araaci", k = 2
+
+When you need to shrink, you poll the oldest character from queue.
+But oldest character might appear multiple times in window.
+Polling once doesn't mean it's gone from the window.
+
+Example:
+window = "araa", queue = [a,r,a,a], map={a:3, r:1}
+
+Need to shrink (add 'c', now 3 distinct):
+poll queue → 'a'
+map.get('a')=3 > 1 → decrement → map={a:2, r:1}
+size still 2 → stop shrinking
+
+But now window thinks it starts after first 'a'
+while 'r' is still in window at index 1 ❌
+```
+
+The Queue loses track of which character is actually at the left boundary of the window.
+
+---
+
+## The Right Approach — Two Pointer Sliding Window
+
+No Queue needed. `left` pointer tracks the window's left boundary directly:
+
+```java
+public static int longestSubstringKDistinct(String s, int k) {
+    if (s == null || s.isEmpty() || k == 0) return 0;
+
+    Map<Character, Integer> window = new HashMap<>();
+    int left = 0;
+    int maxLen = 0;
+
+    for (int right = 0; right < s.length(); right++) {
+        // 1. add incoming character
+        char c = s.charAt(right);
+        window.merge(c, 1, Integer::sum);
+
+        // 2. shrink from left while invalid
+        while (window.size() > k) {
+            char leftChar = s.charAt(left);
+            window.merge(leftChar, -1, Integer::sum);
+            if (window.get(leftChar) == 0) window.remove(leftChar);
+            left++;
+        }
+
+        // 3. update answer
+        maxLen = Math.max(maxLen, right - left + 1);
+    }
+
+    return maxLen;
+}
+```
+
+---
+
+## Trace — Correct Solution
+
+```
+s="araaci", k=2
+window={}, left=0, maxLen=0
+
+right=0 'a': window={a:1}, size=1≤2, maxLen=1
+right=1 'r': window={a:1,r:1}, size=2≤2, maxLen=2
+right=2 'a': window={a:2,r:1}, size=2≤2, maxLen=3
+right=3 'a': window={a:3,r:1}, size=2≤2, maxLen=4
+right=4 'c': window={a:3,r:1,c:1}, size=3>2
+  remove left=0 'a': window={a:2,r:1,c:1}, left=1
+  size still 3>2
+  remove left=1 'r': window={a:2,c:1}, left=2
+  size=2≤2 → stop
+  maxLen=max(4, 4-2+1=3)=4
+right=5 'i': window={a:2,c:1,i:1}, size=3>2
+  remove left=2 'a': window={a:1,c:1,i:1}, left=3
+  size still 3>2
+  remove left=3 'a': window={c:1,i:1}, left=4
+  size=2≤2 → stop
+  maxLen=max(4, 5-4+1=2)=4
+
+Answer: 4 ✅
+```
+
+---
+
+## Test All 8 Cases
+
+```
+s="araaci",  k=2 → 4  ✅
+s="araaci",  k=1 → 2  ✅
+s="araaci",  k=3 → 5  ✅
+s="abc",     k=5 → 3  ✅
+s="aaaa",    k=1 → 4  ✅
+s="abc",     k=0 → 0  ✅
+s="",        k=2 → 0  ✅
+s="a",       k=1 → 1  ✅
+```
+
+---
+
+## What You Got Right
+
+```java
+// Frequency tracking — correct approach
+charByFrequency.merge(c, 1, Integer::sum)
+
+// Shrink when size > k — correct condition
+while (charByFrequency.size() >= k)
+
+// Remove when count hits 0 — correct
+charByFrequency.remove(oldest)
+```
+
+Right ideas, wrong data structure for tracking window boundary.
+
+---
+
+## The Rule
+
+```
+Sliding window left boundary → always use left pointer (int)
+Never use a Queue to track window boundary
+Queue doesn't know which character is at position left
+```
+
+---
+
+## Score Card
+
+| Dimension | Your Solution | Senior Bar |
+|---|---|---|
+| Frequency map | ✅ Correct | ✅ |
+| Window validity condition | ✅ size > k | ✅ |
+| Left boundary tracking | ❌ Queue instead of pointer | ✅ |
+| Correctness | ❌ Wrong on some inputs | ✅ |
+| Null guard | ⚠️ missing null check | ✅ |
+| Debug prints | ⚠️ remove before interview | ✅ |
+
+---
+
+Ready for **Graphs** now?
