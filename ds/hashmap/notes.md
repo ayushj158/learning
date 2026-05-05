@@ -1724,3 +1724,306 @@ Queue doesn't know which character is at position left
 ---
 
 Ready for **Graphs** now?
+
+**"Given a string, find the length of the longest substring that contains no repeating characters."**
+
+```
+Input:  "abcabcbb"
+Output: 3   ("abc")
+
+Input:  "bbbbb"
+Output: 1   ("b")
+
+Input:  "pwwkew"
+Output: 3   ("wke")
+
+Input:  ""
+Output: 0
+```
+
+---
+
+## In Plain English
+
+Find the longest window in the string where every character appears exactly once.
+
+```
+"abcabcbb"
+ ^^^        "abc" — 3 unique chars ✅
+    ^^^     "abc" — 3 unique chars ✅
+      ^^^   "cbb" — 'b' repeats ❌
+       ^    "b"   — 1 unique char
+
+Longest = 3
+```
+
+Now write it. HashMap version — last seen index approach.
+
+# Code Review — Longest Substring No Repeating
+
+## Verdict: Wrong Approach ⚠️
+
+Good instincts but the logic breaks on several inputs. Let me show you exactly where.
+
+---
+
+## Bug 1 — `while(s.charAt(right) == s.charAt(left))`
+
+This only moves left while the leftmost character equals the duplicate. But the duplicate might not be at the left boundary.
+
+```
+s = "abba"
+
+right=3, c='a', duplicate found
+left=0, s.charAt(0)='a' == 'a' → left++
+left=1, s.charAt(1)='b' != 'a' → stop
+
+window now = "bb" — still has duplicate 'b' ❌
+```
+
+---
+
+## Bug 2 — Map Stores -1, Never Updated
+
+```java
+window.put(s.charAt(right), -1);   // ❌ always stores -1
+```
+
+You never store the actual index. The map is useless for jumping left pointer.
+
+---
+
+## Bug 3 — Characters Added But Never Removed
+
+When you shrink from left, you never remove characters from the map. Window state becomes stale.
+
+---
+
+## The Clean Mental Model
+
+You've done this before — HashMap stores `character → last seen index`. When you find a duplicate, jump left directly past it using the stored index.
+
+```
+"abcabcbb"
+
+right=3, c='a', lastSeen={a:0, b:1, c:2}
+  'a' seen at index 0, which is >= left(0)
+  → jump left to 0+1=1
+  → update lastSeen[a]=3
+  window = "bca", left=1
+
+right=4, c='b', lastSeen={a:3, b:1, c:2}
+  'b' seen at index 1, which is >= left(1)
+  → jump left to 1+1=2
+  → update lastSeen[b]=4
+  window = "cab", left=2
+```
+
+---
+
+## Correct Solution — From Memory
+
+```java
+public static int longestSubstringNoRepeating(String s) {
+    if (s == null || s.isEmpty()) return 0;
+
+    Map<Character, Integer> lastSeen = new HashMap<>();
+    int left = 0;
+    int maxLen = 0;
+
+    for (int right = 0; right < s.length(); right++) {
+        char c = s.charAt(right);
+
+        // if seen AND inside current window → jump left past it
+        if (lastSeen.containsKey(c) && lastSeen.get(c) >= left) {
+            left = lastSeen.get(c) + 1;
+        }
+
+        lastSeen.put(c, right);   // always update — whether duplicate or not
+        maxLen = Math.max(maxLen, right - left + 1);
+    }
+
+    return maxLen;
+}
+```
+
+---
+
+## The Three Lines That Matter
+
+```java
+// 1. Duplicate found AND inside current window
+if (lastSeen.containsKey(c) && lastSeen.get(c) >= left)
+
+// 2. Jump left past the duplicate
+left = lastSeen.get(c) + 1;
+
+// 3. Always update last seen
+lastSeen.put(c, right);
+```
+
+---
+
+## Why `>= left` — The Critical Guard
+
+```
+s = "abba"
+
+right=3, c='a', lastSeen={a:0, b:2}, left=2
+
+lastSeen.get('a') = 0
+0 >= left(2)? NO → don't jump left backward
+
+Without >= left:
+  left = 0+1 = 1 → moves left BACKWARD ❌ window expands, allows duplicates
+```
+
+---
+
+## Trace — "abcabcbb"
+
+```
+left=0, lastSeen={}, maxLen=0
+
+right=0 'a': not seen → lastSeen={a:0}, maxLen=1
+right=1 'b': not seen → lastSeen={a:0,b:1}, maxLen=2
+right=2 'c': not seen → lastSeen={a:0,b:1,c:2}, maxLen=3
+right=3 'a': seen at 0, 0>=left(0) → left=1
+             lastSeen={a:3,b:1,c:2}, maxLen=3
+right=4 'b': seen at 1, 1>=left(1) → left=2
+             lastSeen={a:3,b:4,c:2}, maxLen=3
+right=5 'c': seen at 2, 2>=left(2) → left=3
+             lastSeen={a:3,b:4,c:5}, maxLen=3
+right=6 'b': seen at 4, 4>=left(3) → left=5
+             lastSeen={a:3,b:6,c:5}, maxLen=3
+right=7 'b': seen at 6, 6>=left(5) → left=7
+             lastSeen={a:3,b:7,c:5}, maxLen=3
+
+Answer: 3 ✅
+```
+
+---
+
+## Score Card
+
+| Dimension | Your Solution | Senior Bar |
+|---|---|---|
+| Null guard | ✅ | ✅ |
+| HashMap approach | ⚠️ right idea wrong impl | ✅ |
+| Last seen index | ❌ stored -1 | ✅ |
+| >= left guard | ❌ missing | ✅ |
+| Left jump | ❌ wrong logic | ✅ |
+| Always update map | ❌ missing | ✅ |
+
+---
+
+Write it again from scratch now — should take 2 minutes. Post it.
+
+
+# Code Review — Longest Substring No Repeating
+
+## Verdict: Close — One Bug ⚠️
+
+Good progress. One line is wrong.
+
+---
+
+## The Bug — `left +=` Instead of `left =`
+
+```java
+left += window.get(s.charAt(right)) + 1;   // ❌ accumulates, never resets
+```
+
+`+=` adds to left instead of setting it. Left can jump way past where it should be.
+
+```
+s = "abba"
+
+right=2, c='b', lastSeen[b]=1
+left += 1+1 = 2   → left=2 ✅ happens to work here
+
+right=3, c='a', lastSeen[a]=0
+left += 0+1 = 1   → left=3  ❌ should be 1, now it's 3
+maxLen = max(?, 3-3+1=1)  ← wrong
+```
+
+Fix — `=` not `+=`:
+
+```java
+left = window.get(s.charAt(right)) + 1;   // ✅ jump directly
+```
+
+---
+
+## Bug 2 — Missing `>= left` Guard
+
+```java
+left = window.get(s.charAt(right)) + 1;
+```
+
+What if the duplicate was seen before the current window?
+
+```
+s = "abba"
+
+right=3, c='a', lastSeen={a:0, b:2}, left=2
+left = 0+1 = 1   ❌ moves left BACKWARD from 2 to 1
+```
+
+Fix:
+
+```java
+if (window.get(s.charAt(right)) >= left) {
+    left = window.get(s.charAt(right)) + 1;
+}
+```
+
+---
+
+## Corrected Solution
+
+```java
+public static int longestSubstringNoRepeating(String s) {
+    if (s == null || s.isEmpty()) return 0;
+
+    Map<Character, Integer> lastSeen = new HashMap<>();
+    int left = 0;
+    int maxLen = 0;
+
+    for (int right = 0; right < s.length(); right++) {
+        char c = s.charAt(right);
+
+        if (lastSeen.containsKey(c) && lastSeen.get(c) >= left) {
+            left = lastSeen.get(c) + 1;   // ✅ = not +=
+        }
+
+        lastSeen.put(c, right);            // ✅ always update
+        maxLen = Math.max(maxLen, right - left + 1);
+    }
+
+    return maxLen;
+}
+```
+
+---
+
+## Score Card
+
+| Dimension | Your Solution | Senior Bar |
+|---|---|---|
+| Null guard | ✅ | ✅ |
+| HashMap last seen | ✅ | ✅ |
+| `=` vs `+=` | ❌ += | ✅ = |
+| `>= left` guard | ❌ Missing | ✅ |
+| Always update map | ✅ | ✅ |
+
+---
+
+Two habits missing from this solution — both are the same two you've missed before:
+
+```
+1. >= left guard
+2. = not +=
+```
+
+Write it one more time. Clean version. Post it.

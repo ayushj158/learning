@@ -1,7 +1,9 @@
 package ds.hashmap;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedList;
@@ -35,9 +37,44 @@ public class map {
         // int[] keys = {4, 5, 0, -2, -3, 1};
         // System.out.println(subarrayDivisbleByK(keys,5));
 
-        System.out.println(longestSubstringKDistinct("araaci",2));
+        // System.out.println(longestSubstringKDistinct("araaci",2));
+        
+        System.out.println(longestSubStringNonRepeating("abcabcbb"));
     }
 
+    /**
+     * "Given a string, find the length of the longest substring that contains no repeating characters."
+        Input:  "abcabcbb"
+        Output: 3   ("abc")
+
+        Input:  "bbbbb"
+        Output: 1   ("b")
+
+        Input:  "pwwkew"
+        Output: 3   ("wke")
+
+        Input:  ""
+        Output: 0
+     * @param s
+     * @return
+     */
+    public static int longestSubStringNonRepeating(String s) {
+        if (s == null || s.isEmpty())
+            return 0;
+        Map<Character, Integer> window = new HashMap<>();
+        int maxLen = 0;
+        int left = 0;
+
+        for (int right = 0; right < s.length(); right++) {
+            char c = s.charAt(right);
+            if (window.containsKey(c) && window.get(c) >= left) {
+                left = window.get(c) + 1;
+            }
+            window.put(c, right);
+            maxLen = Math.max(maxLen, right - left + 1);
+        }
+        return maxLen;
+    }
     public static int longestSubstringKDistinct(String s, int k) {
         if (s==null || s.isEmpty() || k==0) return 0;
         Map<Character,Integer> window = new HashMap<>();

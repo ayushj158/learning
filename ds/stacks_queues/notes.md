@@ -2351,5 +2351,286 @@ System.out.println(max.poll());    // 5
 ```
 
 ---
+Smart — drill the patterns on new problems before moving on. Let's go one by one.
 
-Ready for **Trees & BSTs** now?
+---
+
+# Queue 1 — Daily Temperatures
+
+**"Given an array of daily temperatures, return an array where each element is the number of days you have to wait until a warmer temperature. If no warmer day exists, put 0."**
+
+```
+Input:  [73, 74, 75, 71, 69, 72, 76, 73]
+Output: [1,  1,  4,  2,  1,  1,  0,  0]
+
+Explanation:
+Day 0 (73°): next warmer is day 1 (74°) → wait 1 day
+Day 1 (74°): next warmer is day 2 (75°) → wait 1 day
+Day 2 (75°): next warmer is day 6 (76°) → wait 4 days
+Day 3 (71°): next warmer is day 5 (72°) → wait 2 days
+...
+Day 6 (76°): no warmer day → 0
+Day 7 (73°): no warmer day → 0
+```
+
+**Constraints:** O(n) time, O(n) space.
+
+---
+
+## The Connection To What You Already Know
+
+This is **exactly** next greater element — just phrased differently.
+
+```
+Next greater element → what is the value?
+Daily temperatures  → how many days away is it?
+
+Instead of storing the value at stack[top]:
+store result[idx] = i - idx   (distance not value)
+```
+
+Everything else is identical to your next greater element solution.
+
+---
+
+## Write It
+
+```java
+public static int[] dailyTemperatures(int[] temperatures) {
+
+}
+```
+
+**One thing to think through:**
+- Result stores distance not value
+- `result[idx] = i - idx` where `i` is current day, `idx` is waiting day
+
+Post when ready.
+# Code Review — Daily Temperatures
+
+## Verdict: Perfect ✅
+
+Clean, correct, complete. Identical structure to next greater element — you applied the pattern perfectly.
+
+---
+
+## Correctness Check
+
+```java
+while (!waiting.isEmpty() && temps[i] > temps[waiting.peek()]) {
+    int index = waiting.pop();
+    result[index] = i - index;   // ✅ distance not value
+}
+waiting.push(i);                 // ✅ push index
+```
+
+Every line right. The only change from next greater element is `i - index` instead of `temps[i]` — you got that exactly.
+
+---
+
+## Two Small Things
+
+```java
+Arrays.fill(result, 0);   // ⚠️ unnecessary — int[] defaults to 0
+if (temps == null || temps.length == 0) return new int[0];  // ❌ missing
+```
+
+---
+
+## Score Card
+
+| Dimension | Your Solution | Senior Bar |
+|---|---|---|
+| Core logic | ✅ Perfect | ✅ |
+| Distance calculation | ✅ i - index | ✅ |
+| Index stored not value | ✅ | ✅ |
+| Default 0 for no answer | ✅ automatic | ✅ |
+| Unnecessary Arrays.fill | ⚠️ | ✅ |
+| Null guard | ❌ | ✅ |
+
+---
+
+# Question 2 — Stock Span Problem
+
+**"For each day's stock price, find the span — the number of consecutive days immediately before today (including today) where the price was less than or equal to today's price."**
+
+```
+Input:  [100, 80, 60, 70, 60, 75, 85]
+Output: [1,   1,  1,  2,  1,  4,  6]
+
+Explanation:
+Day 0 (100): no previous days → span=1
+Day 1 (80):  100>80 → span=1
+Day 2 (60):  80>60  → span=1
+Day 3 (70):  60≤70, 80>70 → span=2  (days 2,3)
+Day 4 (60):  70>60  → span=1
+Day 5 (75):  60≤75, 70≤75, 80>75 → span=4  (days 2,3,4,5)
+Day 6 (85):  75≤85, 60≤85, 70≤85, 60≤85, 80≤85, 100>85 → span=6
+```
+
+**Constraints:** O(n) time, O(n) space.
+
+---
+
+## The Connection To What You Know
+
+This is **previous greater element** — looking LEFT instead of right.
+
+```
+Daily temperatures → next greater → scan left to right
+Stock span         → previous greater → still scan left to right
+                     but result is distance to previous greater
+```
+
+```
+span[i] = i - index of previous greater element
+        = i - stack.peek()   after popping smaller elements
+
+If no previous greater → span = i + 1  (entire history)
+```
+
+**One difference from daily temperatures:**
+- Daily temps: pop when current > waiting → store distance
+- Stock span: pop while current >= stack top → span = i - new stack top
+
+---
+
+## Write It
+
+```java
+public static int[] stockSpan(int[] prices) {
+
+}
+```
+
+**Things to think through:**
+- Do you pop when `prices[i] > prices[stack.peek()]` or `>=`?
+- What is the span when stack is empty after popping?
+- What do you push — index or value?
+
+Post when ready.
+
+
+
+You're right to be confused. Let me reread the problem definition carefully.
+
+---
+
+## Reread The Definition
+
+```
+Span = number of consecutive days immediately before today 
+       (INCLUDING today) where price ≤ today's price
+```
+
+Key word — **consecutive**. It stops as soon as it hits a day with higher price.
+
+---
+
+## Trace Day by Day — Very Slow
+
+```
+prices = [100, 80, 60, 70, 60, 75, 85]
+index  =   0   1   2   3   4   5   6
+```
+
+**Day 0, price=100:**
+```
+No previous days → span = 1 (just today)
+```
+
+**Day 1, price=80:**
+```
+Look back: day 0 price=100 > 80 → STOP immediately
+Consecutive streak broken at day 0
+span = 1 (just today)
+```
+
+**Day 2, price=60:**
+```
+Look back: day 1 price=80 > 60 → STOP immediately
+span = 1 (just today)
+```
+
+**Day 3, price=70:**
+```
+Look back: day 2 price=60 ≤ 70 → continue ✅
+           day 1 price=80 > 70 → STOP
+Consecutive days with price ≤ 70: day 2 and day 3
+span = 2
+```
+
+**Day 4, price=60:**
+```
+Look back: day 3 price=70 > 60 → STOP immediately
+span = 1
+```
+
+**Day 5, price=75:**
+```
+Look back: day 4 price=60 ≤ 75 → continue ✅
+           day 3 price=70 ≤ 75 → continue ✅
+           day 2 price=60 ≤ 75 → continue ✅
+           day 1 price=80 > 75 → STOP
+Consecutive days: 2,3,4,5
+span = 4
+```
+
+**Day 6, price=85:**
+```
+Look back: day 5 price=75 ≤ 85 → continue ✅
+           day 4 price=60 ≤ 85 → continue ✅
+           day 3 price=70 ≤ 85 → continue ✅
+           day 2 price=60 ≤ 85 → continue ✅
+           day 1 price=80 ≤ 85 → continue ✅
+           day 0 price=100 > 85 → STOP
+Consecutive days: 1,2,3,4,5,6
+span = 6
+```
+
+---
+
+## Your Question — Day 3, price=70
+
+```
+Day 2 price=60 ≤ 70 → included ✅
+Day 1 price=80 > 70 → STOP ❌
+
+span = 2  (day 2 and day 3 only)
+```
+
+You said "prices less than 70 on index 2 hence span=1" — but the definition includes today AND consecutive previous days with price **≤** today. Day 2 (price=60) is ≤ 70, so it's included. Span = 2, not 1.
+
+---
+
+## The CONSECUTIVE Rule Is Everything
+
+```
+prices = [100, 80, 60, 70, 60, 75, 85]
+
+For day 5 (price=75):
+  day 4: 60 ≤ 75 ✅ consecutive, keep going
+  day 3: 70 ≤ 75 ✅ consecutive, keep going
+  day 2: 60 ≤ 75 ✅ consecutive, keep going
+  day 1: 80 > 75 ❌ STOP — streak broken
+
+Even though day 0 (100) exists and is > 75,
+we never reach it because day 1 already broke the streak.
+```
+
+**Consecutive means no gaps.** The moment you hit a higher price, you stop — even if there are lower prices further back.
+
+---
+
+## Now The Stack Makes Sense
+
+```
+Stack keeps track of "blockers" — days with higher prices.
+The nearest blocker to the left determines the span.
+
+For day 5 (price=75):
+  nearest blocker = day 1 (price=80)
+  span = 5 - 1 = 4 ✅
+```
+
+Is this clear now?
