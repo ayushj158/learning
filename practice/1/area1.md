@@ -4142,3 +4142,1936 @@ Error Handling:
 ---
 
 Ready for the next question: **"What is the difference between checked and unchecked exceptions? When to use each?"**
+
+Solid answer — you've got the core distinction right. Let me validate, sharpen, and add the senior-level nuance that makes this a complete answer.
+
+---
+
+## What You Nailed ✅
+
+- Checked = must declare with throws or handle with try-catch
+- Unchecked = RuntimeException, no forced handling
+- Checked for business errors, unchecked for technical/logic errors
+
+---
+
+## The Complete Picture
+
+---
+
+## 1. The Hierarchy First
+
+```
+Throwable
+├── Error                          — JVM-level, never catch
+│   ├── OutOfMemoryError
+│   ├── StackOverflowError
+│   └── VirtualMachineError
+│
+└── Exception
+    ├── CHECKED exceptions         — must handle or declare
+    │   ├── IOException
+    │   ├── SQLException
+    │   ├── ParseException
+    │   └── FileNotFoundException
+    │
+    └── RuntimeException           — UNCHECKED, no forced handling
+        ├── NullPointerException
+        ├── IllegalArgumentException
+        ├── IllegalStateException
+        ├── NumberFormatException
+        ├── IndexOutOfBoundsException
+        └── UnsupportedOperationException
+```
+
+---
+
+## 2. Checked Exceptions — Deep Dive
+
+```java
+// Checked exception — compiler FORCES you to handle it
+// Method must either catch it or declare throws
+
+// Option 1 — handle it
+public Account loadAccount(String filePath) {
+    try {
+        return fileParser.parse(filePath);   // throws IOException
+    } catch (IOException e) {
+        log.error("Failed to load account from file", e);
+        throw new AccountLoadException("File load failed", e);
+    }
+}
+
+// Option 2 — declare and propagate
+public Account loadAccount(String filePath) throws IOException {
+    return fileParser.parse(filePath);  // caller must handle
+}
+
+// Custom checked exception
+public class InsufficientFundsException extends Exception {
+    private final double requested;
+    private final double available;
+
+    public InsufficientFundsException(double requested, double available) {
+        super(String.format(
+            "Requested %.2f but only %.2f available",
+            requested, available));
+        this.requested = requested;
+        this.available = available;
+    }
+}
+
+// Interface declares checked exception — forces caller to handle
+public interface PaymentGateway {
+    PaymentResult execute(PaymentRequest request)
+        throws InsufficientFundsException, InvalidAccountException;
+}
+
+// Caller is FORCED to handle — compiler error if they don't
+public void processPayment(PaymentRequest request) {
+    try {
+        PaymentResult result = gateway.execute(request);
+    } catch (InsufficientFundsException e) {
+        // Must handle this ✅
+        notifyCustomer(e.getAvailable());
+    } catch (InvalidAccountException e) {
+        // Must handle this ✅
+        rejectPayment(request);
+    }
+}
+```
+
+---
+
+## 3. Unchecked Exceptions — Deep Dive
+
+```java
+// Unchecked — extends RuntimeException
+// No forced handling — programmer's choice
+
+// Custom unchecked exception
+public class PaymentProcessingException extends RuntimeException {
+    private final String errorCode;
+
+    public PaymentProcessingException(String message, String errorCode) {
+        super(message);
+        this.errorCode = errorCode;
+    }
+
+    public PaymentProcessingException(String message,
+                                       String errorCode,
+                                       Throwable cause) {
+        super(message, cause);
+        this.errorCode = errorCode;
+    }
+}
+
+// No throws declaration needed
+public PaymentResult processPayment(PaymentRequest request) {
+    if (request == null) {
+        throw new IllegalArgumentException("Request cannot be null");
+    }
+    if (request.getAmount() <= 0) {
+        throw new IllegalArgumentException(
+            "Amount must be positive: " + request.getAmount());
+    }
+    // process...
+}
+
+// Common unchecked exceptions and when to throw them
+public class AccountService {
+
+    public Account findById(String id) {
+        // IllegalArgumentException — bad input, caller's fault
+        if (id == null || id.isBlank()) {
+            throw new IllegalArgumentException("Account ID cannot be blank");
+        }
+
+        Account account = repository.findById(id).orElse(null);
+
+        // IllegalStateException — object in wrong state
+        if (account != null && account.isLocked()) {
+            throw new IllegalStateException(
+                "Account is locked: " + id);
+        }
+
+        // UnsupportedOperationException — operation not supported
+        // (like your deposit account withdraw example)
+        return account;
+    }
+}
+```
+
+---
+
+## 4. The Great Debate — Checked vs Unchecked
+
+This is the senior-level nuance — there's a genuine design argument:
+
+### The case FOR checked exceptions
+```java
+// Forces API consumers to think about failure cases
+// Contract is explicit in method signature
+// Compiler guarantees handling at compile time
+
+public interface AccountRepository {
+    Account findById(String id) throws AccountNotFoundException;
+    // Consumer KNOWS this can fail and MUST handle it
+    // Cannot accidentally ignore the failure case
+}
+```
+
+### The case AGAINST checked exceptions
+```java
+// Problem 1 — exception swallowing (worst outcome)
+try {
+    account = repository.findById(id);
+} catch (AccountNotFoundException e) {
+    // developer too lazy — silently swallows ❌
+    // worse than unchecked which would at least surface
+}
+
+// Problem 2 — pollutes call stack with throws declarations
+public PaymentResult processPayment(PaymentRequest request)
+    throws AccountNotFoundException,     // ❌ leaks abstraction
+           InsufficientFundsException,
+           CurrencyMismatchException,
+           RateLimitExceededException {
+    // caller must know about all these implementation details
+}
+
+// Problem 3 — breaks lambdas and streams
+// Checked exceptions don't work in lambdas ❌
+accounts.stream()
+    .map(account -> repository.findById(account.getId()))
+    // ❌ Compile error — findById throws checked exception
+    // Streams don't support checked exceptions
+    .collect(toList());
+
+// You'd have to wrap it — ugly
+accounts.stream()
+    .map(account -> {
+        try {
+            return repository.findById(account.getId());
+        } catch (AccountNotFoundException e) {
+            throw new RuntimeException(e);  // wrapping anyway!
+        }
+    })
+    .collect(toList());
+```
+
+### Modern Java consensus — prefer unchecked
+```java
+// Spring, Hibernate, modern frameworks all use unchecked
+// DataAccessException (Spring) — unchecked wrapper for all DB errors
+// Lets you handle what you can, let the rest propagate to global handler
+
+// Clean service layer with unchecked
+public interface AccountRepository {
+    Account findById(String id);  // throws AccountNotFoundException (unchecked)
+}
+
+// Clean stream usage ✅
+List<Account> accounts = accountIds.stream()
+    .map(repository::findById)   // no try-catch needed
+    .collect(toList());
+```
+
+---
+
+## 5. When to Use What — Decision Guide
+
+```
+Is the caller expected to RECOVER from this exception?
+│
+├── YES — caller has a meaningful recovery strategy
+│   ├── AND it's an external resource (file, DB, network)
+│   │   └── Consider checked (IOException, SQLException)
+│   │
+│   └── AND it's a business rule violation
+│       ├── Small API, few exceptions → checked (explicit contract)
+│       └── Large API, many exceptions → unchecked + document in Javadoc
+│               (avoids polluting signatures)
+│
+└── NO — programming error, invalid state, unexpected failure
+    └── Always unchecked
+        ├── NullPointerException — shouldn't have passed null
+        ├── IllegalArgumentException — caller passed invalid input
+        ├── IllegalStateException — object in wrong state
+        └── UnsupportedOperationException — operation not applicable
+```
+
+---
+
+## 6. Checked Exceptions in Streams — The Problem & Solution
+
+```java
+// Problem — checked exceptions break stream pipelines
+@FunctionalInterface
+interface ThrowingFunction<T, R> {
+    R apply(T t) throws Exception;
+}
+
+// Utility wrapper — converts checked to unchecked for streams
+public static <T, R> Function<T, R> wrap(ThrowingFunction<T, R> fn) {
+    return t -> {
+        try {
+            return fn.apply(t);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    };
+}
+
+// Now usable in streams
+List<Account> accounts = accountIds.stream()
+    .map(wrap(id -> repository.findById(id)))  // ✅ clean
+    .collect(toList());
+```
+
+---
+
+## 7. Exception Wrapping — Preserving Cause
+
+Always preserve the original cause when wrapping:
+
+```java
+// WRONG — loses original stack trace ❌
+try {
+    return repository.findById(id);
+} catch (SQLException e) {
+    throw new AccountLoadException("DB error");  // cause lost!
+}
+
+// CORRECT — preserves full stack trace ✅
+try {
+    return repository.findById(id);
+} catch (SQLException e) {
+    throw new AccountLoadException("DB error", e);  // cause preserved
+}
+
+// Why it matters — in production log you see:
+// AccountLoadException: DB error
+//   Caused by: SQLException: Connection timeout
+//     at PostgresDriver.execute(...)   ← tells you exactly what happened
+```
+
+---
+
+## Complete Summary Table
+
+| Aspect | Checked | Unchecked |
+|---|---|---|
+| Extends | Exception | RuntimeException |
+| Compiler enforcement | ✅ Must handle or declare | ❌ Optional |
+| Use case | Recoverable business/external errors | Programming errors, invalid state |
+| Works in lambdas/streams | ❌ No | ✅ Yes |
+| Modern preference | Avoid for large APIs | Preferred in modern Java |
+| Examples | IOException, SQLException | NPE, IllegalArgumentException |
+| Spring/Hibernate | Wraps to unchecked | Uses unchecked throughout |
+
+---
+
+## Polished 60-Second Interview Answer
+
+*"Checked exceptions extend Exception and the compiler forces callers to either handle them or declare them in the method signature. Unchecked extend RuntimeException — no forced handling. The intent is that checked exceptions represent recoverable conditions the caller should have a strategy for, while unchecked represent programming errors or unexpected failures.*
+
+*Classically, checked exceptions made sense for external resource failures — file IO, database, network — and for business rule violations where the caller must explicitly handle each case. The argument is that the contract is self-documenting in the method signature.*
+
+*However, modern Java and major frameworks like Spring have largely moved away from checked exceptions for a few reasons — they don't work in lambdas or stream pipelines without ugly wrapping, they pollute call stack signatures when you have many failure modes, and they're frequently misused by developers who just catch and swallow them, which is worse than letting them propagate.*
+
+*My approach: use unchecked custom exceptions for business rule violations like InvalidAccountException or InsufficientFundsException — document them in Javadoc, let a global exception handler catch what's not explicitly handled. Use checked exceptions only where the caller genuinely has a meaningful recovery strategy and you want compiler-enforced handling. Always wrap exceptions preserving the original cause — losing the stack trace makes production debugging extremely painful."*
+
+---
+
+Ready for the next additional question: **"How does Spring dependency injection work internally — bean lifecycle and scopes?"**
+
+No problem — let me explain it clearly from the ground up.
+
+---
+
+## Spring Dependency Injection — How It Works Internally
+
+---
+
+## 1. The Core Idea
+
+```java
+// WITHOUT DI — you manage object creation
+public class PaymentService {
+    // Hardcoded dependency — tightly coupled ❌
+    private AccountRepository repository = new PostgresAccountRepository();
+    private PaymentGateway gateway = new StripePaymentGateway();
+}
+
+// WITH DI — Spring manages object creation
+@Service
+public class PaymentService {
+    private final AccountRepository repository;  // interface
+    private final PaymentGateway gateway;        // interface
+
+    // Spring injects the right implementation ✅
+    public PaymentService(AccountRepository repository,
+                          PaymentGateway gateway) {
+        this.repository = repository;
+        this.gateway = gateway;
+    }
+}
+```
+
+Spring's IoC (Inversion of Control) container takes responsibility for:
+- Creating objects (beans)
+- Wiring dependencies between them
+- Managing their lifecycle
+
+---
+
+## 2. ApplicationContext — The IoC Container
+
+```java
+// ApplicationContext IS the IoC container
+// It holds all beans and manages their lifecycle
+
+// Spring Boot bootstraps this automatically
+@SpringBootApplication
+public class Application {
+    public static void main(String[] args) {
+        // This creates and starts the ApplicationContext
+        ApplicationContext context =
+            SpringApplication.run(Application.class, args);
+
+        // You can fetch beans manually (rarely needed)
+        PaymentService service = context.getBean(PaymentService.class);
+    }
+}
+```
+
+---
+
+## 3. How Spring Discovers Beans
+
+### Component Scanning
+```java
+// @SpringBootApplication includes @ComponentScan
+// Scans current package and all sub-packages
+
+// These annotations mark classes as beans
+@Component        // generic bean
+@Service          // service layer (semantically meaningful)
+@Repository       // data access layer (adds exception translation)
+@Controller       // web layer
+@RestController   // web layer + @ResponseBody
+
+@Service
+public class PaymentService { ... }  // Spring finds this ✅
+
+@Repository
+public class PostgresAccountRepository
+    implements AccountRepository { ... }  // Spring finds this ✅
+```
+
+### @Configuration + @Bean — explicit bean registration
+```java
+@Configuration
+public class AppConfig {
+
+    // Explicit bean — full control over creation
+    @Bean
+    public PaymentGateway paymentGateway() {
+        return new StripePaymentGateway(
+            environment.getProperty("stripe.api.key")
+        );
+    }
+
+    // Conditional bean — only in production
+    @Bean
+    @Profile("production")
+    public AccountRepository productionRepository(DataSource dataSource) {
+        return new PostgresAccountRepository(dataSource);
+    }
+
+    // Test bean — in-memory for tests
+    @Bean
+    @Profile("test")
+    public AccountRepository testRepository() {
+        return new InMemoryAccountRepository();
+    }
+}
+```
+
+---
+
+## 4. Three Ways to Inject Dependencies
+
+### Constructor Injection — PREFERRED ✅
+```java
+@Service
+public class PaymentService {
+    private final AccountRepository repository;
+    private final PaymentGateway gateway;
+    private final AuditService auditService;
+
+    // @Autowired optional in modern Spring if single constructor
+    public PaymentService(AccountRepository repository,
+                          PaymentGateway gateway,
+                          AuditService auditService) {
+        this.repository = repository;
+        this.gateway = gateway;
+        this.auditService = auditService;
+    }
+}
+```
+
+**Why constructor injection is best:**
+```java
+// 1. Dependencies are final — immutable ✅
+// 2. Object always fully initialised — no partial state ✅
+// 3. Easy to test — just pass mocks in constructor ✅
+// 4. Circular dependency caught at startup — not at runtime ✅
+// 5. Makes dependencies explicit and visible ✅
+
+// Easy unit test — no Spring context needed
+PaymentService service = new PaymentService(
+    mock(AccountRepository.class),
+    mock(PaymentGateway.class),
+    mock(AuditService.class)
+);
+```
+
+### Field Injection — AVOID ❌
+```java
+@Service
+public class PaymentService {
+    @Autowired  // ❌ — avoid
+    private AccountRepository repository;
+
+    @Autowired  // ❌
+    private PaymentGateway gateway;
+}
+
+// Problems:
+// 1. Cannot be final — mutable ❌
+// 2. Hard to test — need Spring context or reflection ❌
+// 3. Hides dependencies — not visible in constructor ❌
+// 4. Can have partially initialised object ❌
+```
+
+### Setter Injection — for optional dependencies only
+```java
+@Service
+public class PaymentService {
+    private MetricsCollector metricsCollector;
+
+    // Only for OPTIONAL dependencies
+    @Autowired(required = false)
+    public void setMetricsCollector(MetricsCollector collector) {
+        this.metricsCollector = collector;
+    }
+}
+```
+
+---
+
+## 5. How Spring Resolves Which Bean to Inject
+
+```java
+// Case 1 — One implementation — simple ✅
+// Spring automatically injects PostgresAccountRepository
+@Service
+public class PaymentService {
+    public PaymentService(AccountRepository repository) { ... }
+}
+
+// Case 2 — Multiple implementations — Spring is confused ❌
+@Repository
+public class PostgresAccountRepository implements AccountRepository { }
+
+@Repository
+public class MongoAccountRepository implements AccountRepository { }
+
+// Spring throws NoUniqueBeanDefinitionException
+
+// Fix 1 — @Primary — mark default implementation
+@Repository
+@Primary  // use this one by default
+public class PostgresAccountRepository implements AccountRepository { }
+
+// Fix 2 — @Qualifier — specify which one explicitly
+@Service
+public class PaymentService {
+    public PaymentService(
+        @Qualifier("postgresAccountRepository") AccountRepository repository
+    ) { ... }
+}
+
+// Fix 3 — @Profile — different bean per environment
+@Repository
+@Profile("production")
+public class PostgresAccountRepository implements AccountRepository { }
+
+@Repository
+@Profile("test")
+public class InMemoryAccountRepository implements AccountRepository { }
+```
+
+---
+
+## 6. Bean Lifecycle — What Happens Internally
+
+```
+Spring ApplicationContext Startup:
+
+1. SCAN & DISCOVER
+   └── Scan classpath for @Component, @Service, @Repository etc.
+   └── Parse @Configuration classes for @Bean methods
+
+2. CREATE BeanDefinitions
+   └── For each bean: stores metadata
+       (class, scope, dependencies, init/destroy methods)
+
+3. BeanFactoryPostProcessors run
+   └── Modify bean definitions BEFORE beans are created
+   └── Example: PropertySourcesPlaceholderConfigurer
+       resolves @Value("${db.url}") placeholders
+
+4. INSTANTIATE beans (in dependency order)
+   └── Creates bean instances
+   └── Constructor injection happens here
+
+5. POPULATE properties
+   └── Setter/field injection happens here
+
+6. BeanPostProcessors — BEFORE init
+   └── @Autowired processing
+   └── AOP proxy creation (wraps beans with aspects)
+
+7. INITIALISE
+   └── @PostConstruct methods called
+   └── InitializingBean.afterPropertiesSet()
+   └── @Bean(initMethod="...") called
+
+8. BEAN READY — in ApplicationContext, serving requests
+
+--- application running ---
+
+9. SHUTDOWN triggered (context.close() or JVM shutdown)
+   └── @PreDestroy methods called
+   └── DisposableBean.destroy() called
+   └── @Bean(destroyMethod="...") called
+```
+
+### @PostConstruct and @PreDestroy
+```java
+@Service
+public class KafkaConsumerService {
+
+    private KafkaConsumer consumer;
+
+    // Called AFTER all dependencies injected
+    // Safe to use injected dependencies here ✅
+    @PostConstruct
+    public void initialise() {
+        consumer = new KafkaConsumer(config);
+        consumer.subscribe(List.of("payment-events"));
+        log.info("Kafka consumer initialised");
+    }
+
+    // Called BEFORE bean is destroyed
+    // Clean up resources ✅
+    @PreDestroy
+    public void shutdown() {
+        if (consumer != null) {
+            consumer.close();
+        }
+        log.info("Kafka consumer shut down gracefully");
+    }
+}
+```
+
+---
+
+## 7. Bean Scopes — Critical to Understand
+
+```java
+// Scope controls HOW MANY instances Spring creates and HOW LONG they live
+```
+
+### Singleton — default scope
+```java
+@Service  // singleton by default
+// OR
+@Service
+@Scope("singleton")
+public class PaymentService {
+    // ONE instance per ApplicationContext
+    // Same instance returned every time it's injected
+    // Created at startup, lives until shutdown
+}
+
+// Problem — singleton with mutable state ❌
+@Service
+public class PaymentService {
+    private int requestCount = 0;  // DANGER — shared across all requests ❌
+
+    public void process(PaymentRequest req) {
+        requestCount++;  // race condition — not thread safe ❌
+    }
+}
+
+// Fix — keep singletons STATELESS ✅
+@Service
+public class PaymentService {
+    // No mutable instance state
+    // All state in method-local variables or external stores
+    public PaymentResult process(PaymentRequest req) {
+        // purely functional — thread safe ✅
+    }
+}
+```
+
+### Prototype — new instance every time
+```java
+@Service
+@Scope("prototype")
+public class PaymentContext {
+    // NEW instance every time it's injected or requested
+    // Spring creates but does NOT manage destruction
+    // YOU are responsible for cleanup ⚠️
+}
+
+// Injecting prototype into singleton — common mistake
+@Service  // singleton
+public class PaymentService {
+    @Autowired
+    private PaymentContext context;  // ❌ injected ONCE at startup
+    // context is now effectively singleton — defeats purpose!
+}
+
+// Fix — use ApplicationContext or ObjectProvider
+@Service
+public class PaymentService {
+    private final ObjectProvider<PaymentContext> contextProvider;
+
+    public PaymentService(ObjectProvider<PaymentContext> contextProvider) {
+        this.contextProvider = contextProvider;
+    }
+
+    public void process(PaymentRequest req) {
+        PaymentContext context = contextProvider.getObject(); // new instance each time ✅
+    }
+}
+```
+
+### Request scope — one per HTTP request
+```java
+@Component
+@Scope(value = WebApplicationContext.SCOPE_REQUEST,
+       proxyMode = ScopedProxyMode.TARGET_CLASS)
+public class RequestContext {
+    // NEW instance per HTTP request
+    // Destroyed when request completes
+    // Perfect for: correlation IDs, user context, request metadata
+
+    private String correlationId;
+    private String userId;
+    // getters, setters
+}
+
+// Inject into singleton — proxyMode handles this ✅
+@Service  // singleton
+public class PaymentService {
+    private final RequestContext requestContext;  // actually a proxy
+
+    // Spring injects a proxy that delegates to the
+    // correct request-scoped instance at runtime ✅
+    public PaymentService(RequestContext requestContext) {
+        this.requestContext = requestContext;
+    }
+}
+```
+
+### Session scope — one per HTTP session
+```java
+@Component
+@Scope(value = WebApplicationContext.SCOPE_SESSION,
+       proxyMode = ScopedProxyMode.TARGET_CLASS)
+public class UserSessionContext {
+    // One instance per user session
+    // Lives until session expires
+    private UserPreferences preferences;
+    private ShoppingCart cart;
+}
+```
+
+### Scope Summary
+```
+Scope       │ Instances          │ Lifetime
+────────────┼────────────────────┼──────────────────────
+singleton   │ 1 per context      │ App startup → shutdown
+prototype   │ 1 per injection    │ Until GC'd
+request     │ 1 per HTTP request │ Request start → end
+session     │ 1 per HTTP session │ Session start → expiry
+```
+
+---
+
+## 8. AOP — How Spring Adds Cross-Cutting Concerns
+
+When you use `@Transactional`, `@Cacheable`, `@Async` — Spring doesn't modify your class. Instead it wraps it in a **proxy**:
+
+```java
+@Service
+public class PaymentService {
+
+    @Transactional  // Spring wraps this in a proxy
+    public PaymentResult processPayment(PaymentRequest request) {
+        // your code
+    }
+}
+
+// What Spring actually creates at runtime (conceptually):
+public class PaymentServiceProxy extends PaymentService {
+
+    @Override
+    public PaymentResult processPayment(PaymentRequest request) {
+        // BEGIN transaction  ← added by proxy
+        try {
+            PaymentResult result = super.processPayment(request);
+            // COMMIT  ← added by proxy
+            return result;
+        } catch (RuntimeException e) {
+            // ROLLBACK  ← added by proxy
+            throw e;
+        }
+    }
+}
+
+// This is why @Transactional doesn't work on private methods!
+// Proxy can't override private methods
+// Self-invocation also bypasses proxy
+@Service
+public class PaymentService {
+
+    public void outerMethod() {
+        this.processPayment(request);  // ❌ calls real object, not proxy
+        // @Transactional on processPayment has NO effect here
+    }
+
+    @Transactional
+    public PaymentResult processPayment(PaymentRequest request) { ... }
+}
+```
+
+---
+
+## Polished 90-Second Interview Answer
+
+*"Spring's IoC container — the ApplicationContext — takes ownership of object creation and wiring. It scans the classpath for @Component, @Service, @Repository annotations and @Bean methods in @Configuration classes, builds BeanDefinitions for each, then instantiates them in dependency order.*
+
+*I always use constructor injection — dependencies are final, object is fully initialised on creation, easy to unit test without Spring context, and circular dependencies are caught at startup rather than runtime. Field injection hides dependencies and makes testing harder.*
+
+*The bean lifecycle has clear hooks — @PostConstruct runs after all dependencies are injected, which I use for initialising Kafka consumers or connection pools. @PreDestroy runs before shutdown for graceful cleanup.*
+
+*Bean scope is important — singleton is the default, one instance per context, which means singletons must be stateless to be thread safe. Prototype creates a new instance per injection but Spring doesn't manage its destruction. Request scope creates one instance per HTTP request — I use this for request context like correlation IDs, with proxy mode so it can be injected into singletons safely.*
+
+*Under the hood, annotations like @Transactional and @Cacheable work through AOP proxies — Spring wraps your bean in a proxy that adds the cross-cutting behaviour. This is why @Transactional doesn't work on private methods or self-invocation — those calls bypass the proxy entirely."*
+
+---
+
+Ready for the next question: **"How do you handle transactions in Spring — @Transactional pitfalls?"**
+
+No problem — let me build it from the ground up clearly.
+
+---
+
+## Spring Transactions & @Transactional — Complete Guide
+
+---
+
+## 1. What is a Transaction?
+
+```
+A transaction guarantees ACID properties:
+
+A — Atomicity    → All operations succeed or ALL are rolled back
+                   No partial updates
+
+C — Consistency  → Database moves from one valid state to another
+                   Business rules always maintained
+
+I — Isolation    → Concurrent transactions don't interfere
+                   Each transaction sees consistent data
+
+D — Durability   → Committed data survives crashes
+                   Written to disk, not just memory
+```
+
+---
+
+## 2. Without Spring — Manual Transaction Management
+
+```java
+// Pre-Spring — verbose, error-prone ❌
+public void transferFunds(String fromId, String toId, double amount) {
+    Connection conn = dataSource.getConnection();
+    try {
+        conn.setAutoCommit(false);  // start transaction
+
+        // debit
+        PreparedStatement debit = conn.prepareStatement(
+            "UPDATE accounts SET balance = balance - ? WHERE id = ?");
+        debit.setDouble(1, amount);
+        debit.setString(2, fromId);
+        debit.executeUpdate();
+
+        // credit
+        PreparedStatement credit = conn.prepareStatement(
+            "UPDATE accounts SET balance = balance + ? WHERE id = ?");
+        credit.setDouble(1, amount);
+        credit.setString(2, toId);
+        credit.executeUpdate();
+
+        conn.commit();  // commit if all good
+
+    } catch (SQLException e) {
+        conn.rollback();  // rollback on failure
+        throw new RuntimeException(e);
+    } finally {
+        conn.close();
+    }
+}
+```
+
+---
+
+## 3. With Spring @Transactional — Clean & Declarative
+
+```java
+@Service
+public class PaymentService {
+
+    @Transactional  // Spring handles begin, commit, rollback ✅
+    public void transferFunds(String fromId, String toId, double amount) {
+        accountRepository.debit(fromId, amount);   // DB operation 1
+        accountRepository.credit(toId, amount);    // DB operation 2
+        auditRepository.record(fromId, toId, amount); // DB operation 3
+        // All three succeed → COMMIT
+        // Any one fails → ROLLBACK all three ✅
+    }
+}
+```
+
+**What Spring does behind the scenes:**
+```
+1. Request hits transferFunds()
+2. Spring PROXY intercepts the call
+3. Proxy BEGINS transaction (getConnection, setAutoCommit false)
+4. Your actual method executes
+5. If SUCCESS → proxy COMMITS
+6. If EXCEPTION → proxy ROLLBACKS
+7. Connection returned to pool
+```
+
+---
+
+## 4. @Transactional — Every Attribute Explained
+
+### rollbackFor — CRITICAL pitfall
+```java
+// DEFAULT behaviour — only rolls back for RuntimeException and Error
+// Checked exceptions DO NOT trigger rollback by default ❌
+
+@Transactional  // default
+public void processPayment(PaymentRequest request)
+        throws InsufficientFundsException {  // checked exception
+
+    accountRepository.debit(request.getAccountId(), request.getAmount());
+    // ^^^ this DB write happens
+
+    if (insufficientFunds) {
+        throw new InsufficientFundsException(...);
+        // ❌ Transaction COMMITS even though exception thrown!
+        // Debit happened, but payment didn't complete — data corruption!
+    }
+}
+
+// FIX — explicitly declare checked exceptions for rollback
+@Transactional(rollbackFor = InsufficientFundsException.class)
+public void processPayment(PaymentRequest request)
+        throws InsufficientFundsException {
+    // Now rolls back on InsufficientFundsException ✅
+}
+
+// Or just use unchecked exceptions — rolls back automatically
+@Transactional
+public void processPayment(PaymentRequest request) {
+    accountRepository.debit(request.getAccountId(), request.getAmount());
+    if (insufficientFunds) {
+        throw new InsufficientFundsException(...);  // unchecked ✅
+        // Rolls back automatically
+    }
+}
+```
+
+### noRollbackFor — prevent rollback for specific exceptions
+```java
+@Transactional(noRollbackFor = AuditLoggingException.class)
+public void processPayment(PaymentRequest request) {
+    // If audit logging fails — don't rollback the payment
+    // Payment is more important than audit log entry
+    paymentRepository.save(payment);
+    try {
+        auditService.log(payment);
+    } catch (AuditLoggingException e) {
+        log.warn("Audit failed but payment committed", e);
+        // Transaction continues ✅
+    }
+}
+```
+
+### readOnly — performance optimisation
+```java
+@Transactional(readOnly = true)
+public List<Account> getActiveAccounts() {
+    // Hints to JPA/Hibernate:
+    // - Skip dirty checking (don't track entity changes)
+    // - Skip flush before query
+    // - Database may use read replica
+    // Faster for read operations ✅
+    return accountRepository.findByStatus(ACTIVE);
+}
+
+// Common pattern — separate read and write transactions
+@Service
+public class AccountService {
+
+    @Transactional(readOnly = true)  // fast reads
+    public Account findById(String id) { ... }
+
+    @Transactional  // full transaction for writes
+    public Account update(Account account) { ... }
+}
+```
+
+### timeout — prevent long-running transactions
+```java
+@Transactional(timeout = 30)  // 30 seconds
+public void processLargeBatch(List<Payment> payments) {
+    // If transaction takes >30 seconds → TransactionTimedOutException
+    // Prevents long locks on database tables ✅
+    payments.forEach(p -> paymentRepository.save(p));
+}
+```
+
+---
+
+## 5. Propagation — Most Important & Most Misunderstood
+
+Propagation controls what happens when a **@Transactional method calls another @Transactional method**.
+
+```java
+// Scenario — ServiceA calls ServiceB
+// Both have @Transactional
+// What transaction does ServiceB use?
+// Answer depends on propagation setting
+```
+
+### REQUIRED — default
+```java
+@Transactional(propagation = Propagation.REQUIRED)  // default
+public void methodB() { ... }
+
+// If transaction EXISTS → joins it (same transaction)
+// If NO transaction → creates new one
+
+// Example:
+@Transactional
+public void methodA() {
+    repo.saveA();       // part of transaction T1
+    methodB();          // joins T1 — same transaction
+    repo.saveC();       // part of T1
+    // If methodB throws → ALL of T1 rolls back
+}
+
+@Transactional  // REQUIRED — joins T1
+public void methodB() {
+    repo.saveB();  // part of T1
+}
+```
+
+### REQUIRES_NEW — independent transaction
+```java
+@Transactional(propagation = Propagation.REQUIRES_NEW)
+public void methodB() { ... }
+
+// ALWAYS creates NEW transaction
+// Suspends existing transaction if one exists
+
+// Use case — audit logging that must commit
+// even if parent transaction rolls back
+@Transactional
+public void processPayment(Payment payment) {
+    paymentRepo.save(payment);
+    auditService.log(payment);  // REQUIRES_NEW
+    // Even if processPayment rolls back
+    // audit log is already committed ✅
+    throw new RuntimeException("payment failed");
+    // payment rolled back, audit log kept ✅
+}
+
+@Transactional(propagation = Propagation.REQUIRES_NEW)
+public void log(Payment payment) {
+    auditRepo.save(new AuditEntry(payment));
+    // commits independently ✅
+}
+```
+
+### NESTED — savepoint within parent transaction
+```java
+@Transactional(propagation = Propagation.NESTED)
+public void methodB() { ... }
+
+// Creates savepoint within EXISTING transaction
+// If methodB fails → rollback to savepoint (not entire transaction)
+// If parent fails → everything rolls back including nested
+
+@Transactional
+public void processOrder(Order order) {
+    orderRepo.save(order);          // part of T1
+
+    try {
+        notificationService.send(order);  // NESTED — savepoint
+    } catch (Exception e) {
+        // Notification failed — rollback to savepoint
+        // order.save() is preserved ✅
+        log.warn("Notification failed, continuing", e);
+    }
+
+    inventoryRepo.update(order);    // still part of T1 ✅
+}
+```
+
+### SUPPORTS, NOT_SUPPORTED, NEVER, MANDATORY
+```java
+// SUPPORTS — use existing transaction if present, else non-transactional
+@Transactional(propagation = Propagation.SUPPORTS)
+public Account findById(String id) {
+    // Works with or without transaction
+    // Read operations that don't strictly need transaction
+}
+
+// NOT_SUPPORTED — suspend existing transaction, run non-transactionally
+@Transactional(propagation = Propagation.NOT_SUPPORTED)
+public void generateReport() {
+    // Long running read — don't want to hold transaction open
+    // Suspends any active transaction
+}
+
+// NEVER — throw exception if transaction exists
+@Transactional(propagation = Propagation.NEVER)
+public void standaloneOperation() {
+    // Ensures this NEVER runs in a transaction
+    // Throws IllegalTransactionStateException if transaction active
+}
+
+// MANDATORY — throw exception if NO transaction exists
+@Transactional(propagation = Propagation.MANDATORY)
+public void mustBeCalledWithinTransaction() {
+    // Must always be called from within existing transaction
+    // Throws if called without active transaction
+}
+```
+
+---
+
+## 6. Isolation Levels — Controlling Concurrent Access
+
+```
+Problem scenarios with concurrent transactions:
+
+Dirty Read      — T2 reads T1's uncommitted data
+                  T1 rolls back — T2 read invalid data
+
+Non-repeatable  — T2 reads row, T1 updates it, T2 reads again
+Read              Gets different value in same transaction
+
+Phantom Read    — T2 reads set of rows matching criteria
+                  T1 inserts new matching row
+                  T2 reads again — sees new "phantom" row
+```
+
+```java
+// READ_UNCOMMITTED — lowest isolation, highest performance
+@Transactional(isolation = Isolation.READ_UNCOMMITTED)
+// Can see dirty reads — almost never use this ❌
+
+// READ_COMMITTED — default in most DBs (PostgreSQL, SQL Server)
+@Transactional(isolation = Isolation.READ_COMMITTED)
+// No dirty reads
+// Non-repeatable reads possible
+// Good balance for most use cases ✅
+
+// REPEATABLE_READ — default in MySQL
+@Transactional(isolation = Isolation.REPEATABLE_READ)
+// No dirty reads
+// No non-repeatable reads
+// Phantom reads possible
+
+// SERIALIZABLE — highest isolation, lowest performance
+@Transactional(isolation = Isolation.SERIALIZABLE)
+// No dirty reads, no non-repeatable, no phantoms
+// Transactions execute as if sequential
+// Use only when absolute consistency required
+// Significant performance cost ❌
+
+// Real world — your Lloyds platform
+@Transactional(isolation = Isolation.READ_COMMITTED)
+public void processPayment(PaymentRequest request) {
+    // READ_COMMITTED sufficient for most payment operations ✅
+    // Balance checked and updated within same transaction
+}
+```
+
+---
+
+## 7. The Pitfalls — What Breaks @Transactional
+
+### Pitfall 1 — Self invocation bypasses proxy
+```java
+@Service
+public class PaymentService {
+
+    public void outerMethod(Payment payment) {
+        this.processPayment(payment);  // ❌ calls this, not proxy
+        // @Transactional on processPayment has NO effect!
+    }
+
+    @Transactional
+    public void processPayment(Payment payment) {
+        // Transaction NEVER starts — proxy bypassed ❌
+    }
+}
+
+// Fix 1 — inject self (ugly but works)
+@Service
+public class PaymentService {
+    @Autowired
+    private PaymentService self;  // Spring injects proxy
+
+    public void outerMethod(Payment payment) {
+        self.processPayment(payment);  // ✅ goes through proxy
+    }
+}
+
+// Fix 2 — move method to separate service (clean ✅)
+@Service
+public class PaymentOrchestrator {
+    private final PaymentProcessor processor;
+
+    public void outerMethod(Payment payment) {
+        processor.processPayment(payment);  // different bean = proxy ✅
+    }
+}
+
+@Service
+public class PaymentProcessor {
+    @Transactional
+    public void processPayment(Payment payment) { ... }
+}
+```
+
+### Pitfall 2 — private methods ignore @Transactional
+```java
+@Service
+public class PaymentService {
+
+    @Transactional  // ❌ IGNORED — proxy can't override private
+    private void processPayment(Payment payment) {
+        // No transaction — Spring silently ignores this
+    }
+}
+
+// Fix — always use public methods for @Transactional ✅
+@Transactional
+public void processPayment(Payment payment) { ... }
+```
+
+### Pitfall 3 — exception caught before proxy sees it
+```java
+@Service
+public class PaymentService {
+
+    @Transactional
+    public void processPayment(Payment payment) {
+        try {
+            paymentRepo.save(payment);
+            throw new RuntimeException("something failed");
+        } catch (RuntimeException e) {
+            log.error("Error", e);
+            // ❌ Exception swallowed — proxy never sees it
+            // Transaction COMMITS even though something failed!
+        }
+    }
+}
+
+// Fix — rethrow after handling ✅
+@Transactional
+public void processPayment(Payment payment) {
+    try {
+        paymentRepo.save(payment);
+        riskyOperation();
+    } catch (RuntimeException e) {
+        log.error("Error processing payment", e);
+        throw e;  // rethrow — proxy sees it and rolls back ✅
+    }
+}
+```
+
+### Pitfall 4 — @Transactional on @Component in wrong layer
+```java
+// ❌ @Transactional on repository is fine
+// ❌ But putting transaction logic in controller is wrong
+@RestController
+public class PaymentController {
+
+    @Transactional  // ❌ wrong layer — transactions belong in service
+    @PostMapping("/payments")
+    public ResponseEntity processPayment(@RequestBody PaymentRequest req) {
+        // Transaction at controller level — too broad
+        // Includes HTTP serialization/deserialization in transaction scope
+    }
+}
+
+// ✅ Transactions belong in service layer
+@Service
+public class PaymentService {
+    @Transactional  // ✅ correct layer
+    public PaymentResult processPayment(PaymentRequest request) { ... }
+}
+```
+
+### Pitfall 5 — N+1 problem with lazy loading outside transaction
+```java
+@Transactional(readOnly = true)
+public List<Account> getAccounts() {
+    return accountRepo.findAll();
+    // Returns accounts with lazy-loaded transactions
+}
+
+// Controller calls:
+List<Account> accounts = accountService.getAccounts();
+// Transaction is CLOSED here
+
+for (Account account : accounts) {
+    account.getTransactions();  // ❌ LazyInitializationException
+    // Transaction closed — can't load lazy associations
+}
+
+// Fix 1 — fetch join in query
+@Query("SELECT a FROM Account a JOIN FETCH a.transactions")
+List<Account> findAllWithTransactions();
+
+// Fix 2 — use DTO projection — only fetch what you need
+@Query("SELECT new AccountDTO(a.id, a.balance) FROM Account a")
+List<AccountDTO> findAllAsDTO();
+```
+
+---
+
+## Complete Summary
+
+```
+@Transactional Key Attributes:
+
+rollbackFor     → which exceptions trigger rollback
+                  DEFAULT: RuntimeException only ⚠️
+
+readOnly        → true for read operations
+                  Skips dirty checking, faster ✅
+
+timeout         → max seconds before timeout
+                  Prevents long DB locks ✅
+
+propagation     → REQUIRED (default) — join or create
+                  REQUIRES_NEW — always new, independent
+                  NESTED — savepoint in parent
+
+isolation       → READ_COMMITTED (default, most DBs)
+                  REPEATABLE_READ (MySQL default)
+                  SERIALIZABLE (strongest, slowest)
+
+Top Pitfalls:
+1. Self-invocation → proxy bypassed, no transaction
+2. Private method → proxy can't override, ignored
+3. Catching exception → proxy never sees it, commits anyway
+4. Wrong layer → transactions in controller, not service
+5. Lazy loading outside transaction → LazyInitializationException
+```
+
+---
+
+## Polished 90-Second Interview Answer
+
+*"Spring @Transactional works through AOP proxies — Spring wraps your bean in a proxy that begins a transaction before your method, commits on success, and rolls back on RuntimeException by default.*
+
+*The most critical pitfall is that checked exceptions don't trigger rollback by default — if you throw a checked exception, the transaction commits even though the operation failed. You need rollbackFor to fix this, which is another reason I prefer unchecked exceptions for business errors.*
+
+*Self-invocation is another common trap — calling a @Transactional method from within the same class bypasses the proxy entirely, so no transaction starts. The fix is extracting to a separate bean. Same issue with private methods — proxies can't override them, so @Transactional is silently ignored.*
+
+*Propagation controls what happens when transactional methods call each other. REQUIRED is the default — joins existing transaction or creates new. REQUIRES_NEW is important for operations like audit logging that must commit independently even if the parent transaction rolls back.*
+
+*For performance, readOnly = true on read operations tells JPA to skip dirty checking and potentially route to a read replica. Timeout prevents long-running transactions from holding database locks.*
+
+*In our Lloyds platform, transactions were at the service layer, never the controller. Each payment operation was a single atomic unit — debit, credit, audit all in one transaction. Audit logging used REQUIRES_NEW so audit records were preserved even if the payment itself rolled back for investigation."*
+
+---
+
+Ready for the last additional question: **"How do you optimise Spring Boot application startup and performance?"**
+
+
+No problem — let me build this from scratch clearly.
+
+---
+
+## Spring Boot Startup & Performance Optimisation
+
+---
+
+## 1. Why Startup Time Matters
+
+```
+Traditional monolith — startup time less critical
+Microservices & Kubernetes — startup time critical because:
+
+├── Pods restart frequently
+├── Auto-scaling spins up new instances under load
+├── Rolling deployments start new instances before killing old
+├── Slow startup = slow recovery from failures
+└── Slow startup = slow scale-out under traffic spikes
+
+Target:
+├── Small service  → under 3 seconds
+├── Medium service → under 8 seconds
+└── Large service  → under 15 seconds
+```
+
+---
+
+## 2. Measure First — Don't Guess
+
+```java
+// Enable startup metrics — see exactly what's slow
+// application.properties
+spring.jmx.enabled=false
+logging.level.org.springframework=DEBUG  // shows bean creation times
+
+// Spring Boot Actuator — startup endpoint
+management.endpoints.web.exposure.include=startup, health, metrics
+
+// Hit /actuator/startup after boot
+// Shows timeline of every step with duration:
+{
+  "timeline": {
+    "events": [
+      {
+        "startTime": "...",
+        "duration": "PT2.3S",   // 2.3 seconds!
+        "startupStep": {
+          "name": "spring.beans.instantiate",
+          "tags": [{"key": "beanName", "value": "heavyServiceBean"}]
+        }
+      }
+    ]
+  }
+}
+// Now you know EXACTLY which bean is slow ✅
+```
+
+---
+
+## 3. Startup Optimisations
+
+### Lazy Initialisation — biggest win
+```java
+// DEFAULT — Spring creates ALL beans at startup
+// Even beans that might never be used during runtime
+
+// Enable global lazy initialisation
+// application.properties
+spring.main.lazy-initialization=true
+// Beans created only when first requested
+// Startup time reduction: 20-40% typically ✅
+
+// Problem — first request is slower (bean created on demand)
+// Fix — mark critical beans as eager
+@Service
+@Lazy(false)  // always create at startup despite global lazy setting
+public class KafkaConsumerService {
+    // This MUST be ready at startup — can't wait for first request
+    @PostConstruct
+    public void startConsuming() { ... }
+}
+
+// Non-critical beans stay lazy
+@Service  // created only when first called
+public class ReportGenerationService { ... }
+```
+
+### Component Scan Narrowing
+```java
+// DEFAULT — Spring scans entire classpath
+// Slow for large applications with many classes
+
+// BAD — scans everything ❌
+@SpringBootApplication  // scans from root package downward
+public class Application { }
+
+// GOOD — restrict scan to your packages only ✅
+@SpringBootApplication(
+    scanBasePackages = {
+        "com.lloyds.payment.service",
+        "com.lloyds.payment.repository",
+        "com.lloyds.payment.config"
+    }
+)
+public class Application { }
+
+// Exclude auto-configurations you don't need
+@SpringBootApplication(
+    exclude = {
+        DataSourceAutoConfiguration.class,    // if no DB
+        SecurityAutoConfiguration.class,      // if no security
+        JmxAutoConfiguration.class,           // if no JMX
+        FlywayAutoConfiguration.class         // if no migrations
+    }
+)
+public class Application { }
+```
+
+### Bean Definition Optimisation
+```java
+// Avoid @ComponentScan on heavy third-party packages
+// Use @Import for specific configurations instead
+
+// BAD — triggers full scan of heavy library ❌
+@ComponentScan("com.heavylibrary")
+
+// GOOD — import only what you need ✅
+@Import({HeavyLibraryConfig.class, HeavyLibraryService.class})
+public class AppConfig { }
+```
+
+### Conditional Bean Creation
+```java
+// Only create beans when actually needed
+
+@Configuration
+public class CacheConfig {
+
+    // Only create Redis cache if Redis is available
+    @Bean
+    @ConditionalOnProperty(name = "cache.enabled", havingValue = "true")
+    public CacheManager redisCacheManager(RedisConnectionFactory factory) {
+        return RedisCacheManager.builder(factory).build();
+    }
+
+    // Fallback — simple in-memory cache
+    @Bean
+    @ConditionalOnMissingBean(CacheManager.class)
+    public CacheManager simpleCacheManager() {
+        return new ConcurrentMapCacheManager();
+    }
+}
+
+// Profile-based beans — don't create prod beans in test
+@Bean
+@Profile("production")
+public HeavyIntegrationService heavyService() { ... }
+```
+
+---
+
+## 4. Runtime Performance Optimisations
+
+### Connection Pool Tuning — HikariCP
+```yaml
+# application.yml
+spring:
+  datasource:
+    hikari:
+      # Pool size formula: connections = (cores * 2) + disk spindles
+      # For 4 core machine: (4 * 2) + 1 = 9
+      maximum-pool-size: 10
+      minimum-idle: 5           # keep 5 connections warm
+      connection-timeout: 3000  # 3s — fail fast if no connection available
+      idle-timeout: 600000      # 10min — remove idle connections
+      max-lifetime: 1800000     # 30min — recycle connections
+      keepalive-time: 60000     # 1min — keep connections alive
+
+      # Validate connections before use
+      connection-test-query: SELECT 1
+```
+
+```java
+// Why this matters — at Lloyds with 25+ engineers
+// Under load, all threads compete for DB connections
+// Too small pool → threads waiting → request timeouts
+// Too large pool → DB overwhelmed → worse performance
+// Sweet spot depends on your DB server capacity
+```
+
+### JPA/Hibernate Optimisation
+```yaml
+spring:
+  jpa:
+    properties:
+      hibernate:
+        # Batch inserts/updates — huge performance win for bulk ops
+        jdbc.batch_size: 50
+        order_inserts: true
+        order_updates: true
+
+        # Second level cache — cache entities across sessions
+        cache.use_second_level_cache: true
+        cache.region.factory_class: org.hibernate.cache.jcache.JCacheRegionFactory
+
+        # Show SQL in dev only — NEVER in production
+        show_sql: false
+        format_sql: false
+
+        # Statistics — measure query performance
+        generate_statistics: false  # true only for profiling
+```
+
+```java
+// N+1 Query Problem — most common Hibernate performance killer
+
+// BAD — N+1 queries ❌
+List<Account> accounts = accountRepo.findAll();
+// 1 query: SELECT * FROM accounts
+
+for (Account account : accounts) {
+    account.getTransactions().size();
+    // N queries: SELECT * FROM transactions WHERE account_id = ?
+    // 1000 accounts = 1001 queries! ❌
+}
+
+// FIX 1 — JOIN FETCH ✅
+@Query("SELECT a FROM Account a JOIN FETCH a.transactions")
+List<Account> findAllWithTransactions();
+// 1 query with join — fetches everything ✅
+
+// FIX 2 — @EntityGraph ✅
+@EntityGraph(attributePaths = {"transactions", "owner"})
+List<Account> findAll();
+
+// FIX 3 — DTO projection — only fetch what you need ✅
+@Query("SELECT new AccountSummaryDTO(a.id, a.balance, COUNT(t)) " +
+       "FROM Account a LEFT JOIN a.transactions t GROUP BY a.id, a.balance")
+List<AccountSummaryDTO> findAccountSummaries();
+// Only fetches needed columns — much faster ✅
+```
+
+### Caching — @Cacheable
+```java
+@Service
+public class AccountService {
+
+    // Cache result — avoid DB hit on repeated calls
+    @Cacheable(
+        value = "accounts",
+        key = "#accountId",
+        unless = "#result == null"  // don't cache null results
+    )
+    public Account findById(String accountId) {
+        return accountRepository.findById(accountId)
+            .orElseThrow(() -> new InvalidAccountException(accountId));
+    }
+
+    // Evict cache when account updated
+    @CacheEvict(value = "accounts", key = "#account.id")
+    public Account update(Account account) {
+        return accountRepository.save(account);
+    }
+
+    // Update cache entry after save
+    @CachePut(value = "accounts", key = "#result.id")
+    public Account save(Account account) {
+        return accountRepository.save(account);
+    }
+}
+
+// Redis cache config — distributed cache across instances
+@Configuration
+@EnableCaching
+public class CacheConfig {
+
+    @Bean
+    public CacheManager cacheManager(RedisConnectionFactory factory) {
+        RedisCacheConfiguration config = RedisCacheConfiguration
+            .defaultCacheConfig()
+            .entryTtl(Duration.ofMinutes(10))     // TTL
+            .serializeValuesWith(
+                RedisSerializationContext.SerializationPair
+                    .fromSerializer(new GenericJackson2JsonRedisSerializer())
+            );
+
+        return RedisCacheManager.builder(factory)
+            .cacheDefaults(config)
+            .withCacheConfiguration("accounts",
+                config.entryTtl(Duration.ofMinutes(5)))  // shorter TTL for accounts
+            .build();
+    }
+}
+```
+
+### Async Processing — @Async
+```java
+@Configuration
+@EnableAsync
+public class AsyncConfig {
+
+    // Custom thread pool for async operations
+    @Bean("asyncExecutor")
+    public Executor asyncExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(5);
+        executor.setMaxPoolSize(20);
+        executor.setQueueCapacity(100);
+        executor.setThreadNamePrefix("async-");
+        executor.setRejectedExecutionHandler(
+            new ThreadPoolExecutor.CallerRunsPolicy()
+        );
+        executor.initialize();
+        return executor;
+    }
+}
+
+@Service
+public class NotificationService {
+
+    // Fire and forget — don't block calling thread
+    @Async("asyncExecutor")
+    public CompletableFuture<Void> sendNotification(Payment payment) {
+        emailService.send(payment.getOwnerEmail(), buildEmail(payment));
+        smsService.send(payment.getPhone(), buildSms(payment));
+        return CompletableFuture.completedFuture(null);
+    }
+}
+
+@Service
+public class PaymentService {
+
+    @Transactional
+    public PaymentResult processPayment(PaymentRequest request) {
+        PaymentResult result = executePayment(request);
+
+        // Async — don't wait for notification to complete
+        notificationService.sendNotification(result);  // ✅ non-blocking
+
+        return result;  // returns immediately ✅
+    }
+}
+```
+
+---
+
+## 5. JVM Level Optimisations
+
+### GC Tuning for microservices
+```bash
+# application startup script / Kubernetes container args
+
+# G1GC — balanced latency/throughput for most services
+-XX:+UseG1GC
+-XX:MaxGCPauseMillis=200
+-Xms512m -Xmx1g          # set min = max to avoid resize pauses
+
+# For Kubernetes — percentage based sizing
+-XX:InitialRAMPercentage=50.0
+-XX:MaxRAMPercentage=75.0
+# 2GB container → 1.5GB heap max, leaves room for Metaspace
+
+# GC logging — always on in production
+-Xlog:gc*:file=/logs/gc.log:time:filecount=5,filesize=20m
+
+# Heap dump on OOM — for diagnosis
+-XX:+HeapDumpOnOutOfMemoryError
+-XX:HeapDumpPath=/logs/heapdump.hprof
+```
+
+### Metaspace tuning
+```bash
+# Prevent unbounded Metaspace growth
+-XX:MetaspaceSize=256m
+-XX:MaxMetaspaceSize=512m
+```
+
+---
+
+## 6. HTTP & API Performance
+
+### Connection Keep-Alive and Thread Pool
+```yaml
+server:
+  tomcat:
+    # Thread pool for handling requests
+    threads:
+      max: 200          # max concurrent requests
+      min-spare: 20     # always-warm threads
+    max-connections: 10000      # max concurrent connections
+    accept-count: 100           # queue size when threads busy
+    connection-timeout: 20000   # 20s connection timeout
+
+  # HTTP/2 — multiplexing, header compression
+  http2:
+    enabled: true
+
+  compression:
+    enabled: true
+    mime-types: application/json,application/xml,text/html
+    min-response-size: 1024  # compress responses > 1KB
+```
+
+### Response Compression & Pagination
+```java
+// Never return unbounded lists ❌
+public List<Account> getAllAccounts() {
+    return accountRepo.findAll();  // could be millions ❌
+}
+
+// Always paginate ✅
+public Page<Account> getAccounts(int page, int size) {
+    Pageable pageable = PageRequest.of(
+        page, size,
+        Sort.by(Sort.Direction.DESC, "openedDate")
+    );
+    return accountRepo.findAll(pageable);
+}
+
+// Slice — cheaper than Page (no count query)
+public Slice<Account> getAccountsSlice(Pageable pageable) {
+    return accountRepo.findAll(pageable);  // no SELECT COUNT(*) ✅
+}
+```
+
+---
+
+## 7. Profiling & Monitoring in Production
+
+```java
+// Spring Boot Actuator — expose metrics
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, metrics, prometheus, startup
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+
+// Key metrics to monitor:
+// jvm.memory.used           → heap usage
+// jvm.gc.pause              → GC pause duration
+// hikaricp.connections.active → DB connection pool usage
+// http.server.requests       → request latency, error rates
+// jvm.threads.live          → thread count
+
+// Micrometer — custom business metrics
+@Service
+public class PaymentService {
+
+    private final MeterRegistry meterRegistry;
+    private final Counter paymentCounter;
+    private final Timer paymentTimer;
+
+    public PaymentService(MeterRegistry registry) {
+        this.meterRegistry = registry;
+        this.paymentCounter = Counter.builder("payments.processed")
+            .tag("type", "transfer")
+            .register(registry);
+        this.paymentTimer = Timer.builder("payments.duration")
+            .register(registry);
+    }
+
+    public PaymentResult processPayment(PaymentRequest request) {
+        return paymentTimer.recordCallable(() -> {
+            PaymentResult result = doProcess(request);
+            paymentCounter.increment();
+            return result;
+        });
+    }
+}
+```
+
+---
+
+## Complete Summary
+
+```
+Startup Optimisations:
+├── spring.main.lazy-initialization=true  → 20-40% faster startup
+├── Narrow component scan                 → less classpath scanning
+├── Exclude unused auto-configurations    → fewer beans created
+└── @ConditionalOnProperty                → conditional bean creation
+
+Runtime Optimisations:
+├── HikariCP tuning      → right-sized connection pool
+├── JPA batch operations → bulk inserts/updates
+├── Fix N+1 queries      → JOIN FETCH, @EntityGraph, DTO projection
+├── @Cacheable           → avoid repeated DB hits
+├── @Async               → non-blocking side operations
+└── Pagination           → never unbounded result sets
+
+JVM Optimisations:
+├── G1GC with MaxGCPauseMillis=200
+├── Xms = Xmx            → avoid resize pauses
+├── RAM percentage sizing → Kubernetes friendly
+└── GC logging           → always on in production
+
+Monitoring:
+├── Actuator + Prometheus → expose metrics
+├── Micrometer            → custom business metrics
+└── /actuator/startup     → identify slow beans
+```
+
+---
+
+## Polished 90-Second Interview Answer
+
+*"I approach Spring Boot performance in three layers — startup, runtime, and JVM.*
+
+*For startup, the biggest single win is lazy initialisation — spring.main.lazy-initialization=true delays bean creation until first use, typically reducing startup by 20-40%. I pair this with narrowing component scan to just our packages and excluding unused auto-configurations. Critical beans like Kafka consumers get @Lazy(false) to ensure they're ready at startup.*
+
+*For runtime, the most impactful optimisations are around data access. HikariCP connection pool needs right-sizing — too small causes thread contention, too large overwhelms the database. N+1 queries are the most common Hibernate performance killer — I fix these with JOIN FETCH or DTO projections that only fetch needed columns. @Cacheable with Redis avoids repeated DB hits for reference data like account details and config. @Async moves non-critical work like notifications off the request thread.*
+
+*At the JVM level, G1GC with a 200ms pause target works well for most microservices. I always set Xms equal to Xmx to avoid resize pauses, and use RAM percentage sizing in Kubernetes so heap scales with container memory.*
+
+*For observability, Spring Actuator with Prometheus exposes JVM metrics, connection pool utilisation, and HTTP latency. The /actuator/startup endpoint shows a timeline of every bean initialisation with duration — so when startup is slow you know exactly which bean is the culprit rather than guessing."*
+
+---
+
+That completes all the **additional questions for Area 1!** 
+
+Here's what we've covered:
+
+**Area 1 — Complete ✅**
+- Q1 JVM GC & Memory Model
+- Q2 Thread safety — synchronized, volatile, ReentrantLock
+- Q3 Thread safety in high-concurrency services
+- Q4 SOLID principles
+- Q5 Exception handling in microservices
+- Q6 Unit testing
+- Additional: HashMap internals & hashCode/equals
+- Additional: Java 8+ features — streams, lambdas, CompletableFuture
+- Additional: Checked vs unchecked exceptions
+- Additional: Spring DI & bean lifecycle
+- Additional: @Transactional pitfalls
+- Additional: Spring Boot performance optimisation
+
+---
+
+Ready to move to **Area 2 — System Architecture for Scalable Real-Time Systems?**
+
+First question: *"Walk me through how you'd design a real-time event-driven system for high throughput and low latency."*
