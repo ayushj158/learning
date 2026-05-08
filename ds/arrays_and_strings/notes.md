@@ -1004,3 +1004,84 @@ pointer = positions.get(idx) + 1;
 ```
 
 > **Remember:** `Collections.binarySearch` finds **exact match**. The `if (idx < 0) idx = -idx - 1` conversion is what turns it into a **"first element ≥ target"** search — this pattern is used constantly in competitive programming.
+
+## Container With Most Water
+
+### Intuition — Why Two Pointers?
+
+The area between two lines is:
+```
+area = min(height[left], height[right]) × (right - left)
+```
+
+> The **shorter line** is always the bottleneck — water spills over it. So moving the **taller line inward can never help** (width shrinks AND height is still capped by the shorter line). Therefore, always move the **shorter line inward** — it's the only move that could find a taller line and increase area.
+
+---
+
+### Walkthrough: `height = [1,8,6,2,5,4,8,3,7]`
+
+```
+left=0(h=1), right=8(h=7) → area = min(1,7) × 8 = 8,  move left (shorter)
+left=1(h=8), right=8(h=7) → area = min(8,7) × 7 = 49, move right (shorter)
+left=1(h=8), right=7(h=3) → area = min(8,3) × 6 = 18, move right (shorter)
+left=1(h=8), right=6(h=8) → area = min(8,8) × 5 = 40, move either
+...pointers converge
+
+max = 49 ✅
+```
+
+---
+
+### Solution
+
+```java
+public int maxArea(int[] height) {
+    int left = 0, right = height.length - 1;
+    int maxWater = 0;
+
+    while (left < right) {
+        int h = Math.min(height[left], height[right]);
+        int w = right - left;
+        maxWater = Math.max(maxWater, h * w);
+
+        // move the shorter line — only hope of finding more water
+        if (height[left] <= height[right]) {
+            left++;
+        } else {
+            right--;
+        }
+    }
+
+    return maxWater;
+}
+```
+
+---
+
+### Why moving the taller line inward never helps
+
+```
+Suppose left is shorter:
+
+Current:  area = height[left] × (right - left)
+
+Move right inward:
+  new area = min(height[left], height[right-1]) × (right - left - 1)
+           ≤ height[left] × (right - left - 1)   ← width shrank
+           < current area                          ← guaranteed worse or equal
+
+Move left inward:
+  new area = min(height[left+1], height[right]) × (right - left - 1)
+           could be > current if height[left+1] >> height[left] ✅
+```
+
+> Moving the shorter line is the **only pointer move that can improve** the answer.
+
+---
+
+### Complexity
+
+| | |
+|---|---|
+| **Time** | `O(n)` — single pass, each element visited once |
+| **Space** | `O(1)` — two pointers only |
