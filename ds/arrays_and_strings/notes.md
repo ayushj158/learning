@@ -726,3 +726,281 @@ Output: 3   (works with negatives too)
 - What do you look up in the map at each step?
 
 Post your solution when ready.
+
+
+
+## Is S a Subsequence of T? (with Follow-up: Billion Queries)
+
+### Problem
+Given two strings `s` and `t`, return `true` if `s` is a subsequence of `t`, `false` otherwise.
+
+> A subsequence maintains relative order but doesn't need to be contiguous.
+> `"ace"` is a subsequence of `"abcde"` but `"aec"` is not.
+
+```
+Input: s = "abc", t = "ahbgdc"  →  Output: true
+Input: s = "axc", t = "ahbgdc"  →  Output: false
+```
+
+---
+
+### Solution 1 — Two Pointer `O(n)` time, `O(1)` space
+> Good for single / few queries
+
+**Intuition:** Walk through `t`, whenever you find the current character of `s`, advance `s`'s pointer. If you exhaust `s`, it's a subsequence.
+
+```java
+public boolean isSubsequence(String s, String t) {
+    int sCurrent = 0;
+
+    for (char c : t.toCharArray()) {
+        if (sCurrent == s.length()) return true;
+        if (c == s.charAt(sCurrent)) sCurrent++;
+    }
+
+    return sCurrent == s.length();
+}
+```
+
+> **Edge cases handled implicitly:**
+> - `s` is empty → `sCurrent == s.length()` is true from start → returns `true`
+> - `t` is empty, `s` not → loop never runs → returns `false`
+
+---
+
+### Follow-up — k ≥ 10⁹ queries against the same `t`
+> Running Solution 1 per query = `O(k × |t|)` — too slow for a billion queries
+
+**Key Idea:** Preprocess `t` once into a map of `char → sorted list of indices`. Then for each query, use **binary search** to find the next valid position without mutating the map.
+
+#### Step 1 — Preprocess `t` once: `O(|t|)`
+```java
+Map<Character, List<Integer>> indexMap = new HashMap<>();
+
+for (int i = 0; i < t.length(); i++) {
+    indexMap
+        .computeIfAbsent(t.charAt(i), k -> new ArrayList<>())
+        .add(i);
+}
+
+// t = "ahbgdc"
+// map: a->[0], h->[1], b->[2], g->[3], d->[4], c->[5]
+```
+
+#### Step 2 — Answer each query using binary search: `O(|s| log |t|)`
+
+**Why binary search?**
+- For each char in `s`, you need the **first occurrence in `t` at or after your current pointer**
+- The index list is sorted → binary search finds this in `O(log n)`
+- **Crucially, never mutate the list** — same map must serve all k queries
+
+```java
+public boolean isSubsequence(String s, String t) {
+    int pointer = 0;
+
+    for (char c : s.toCharArray()) {
+        List<Integer> positions = indexMap.get(c);
+        if (positions == null || positions.isEmpty()) return false;
+
+        // Binary search: find first index >= pointer
+        int lo = 0, hi = positions.size() - 1;
+        int result = -1;
+
+        while (lo <= hi) {
+            int mid = lo + (hi - lo) / 2;
+            if (positions.get(mid) >= pointer) {
+                result = mid;    // candidate, but look left for earlier
+                hi = mid - 1;
+            } else {
+                lo = mid + 1;   // too small, go right
+            }
+        }
+
+        if (result == -1) return false;  // no valid position left in t
+        pointer = positions.get(result) + 1;
+    }
+
+    return true;
+}
+```
+
+#### Walkthrough: `s = "aac"`, `t = "aadc"`
+```
+map: a->[0,1], d->[2], c->[3]
+
+'a', pointer=0 → binary search [0,1] for ≥0 → found at idx 0 → pointer = 1
+'a', pointer=1 → binary search [0,1] for ≥1 → found at idx 1 → pointer = 2
+'c', pointer=2 → binary search [3]   for ≥2 → found at idx 0 → pointer = 4
+
+return true ✅
+```
+
+---
+
+### Why Not Just Remove Consumed Indices?
+
+Intuitive but flawed for the follow-up:
+
+```java
+// ❌ Mutates the map — not reusable across queries
+int firstIndex = positions.get(0);
+positions.remove(0);  // destroys map for next query
+```
+
+| | Remove & Peek | Binary Search |
+|---|---|---|
+| Mutation | ❌ Destroys map | ✅ Never touched |
+| Reusable across queries | ❌ | ✅ |
+| Per query cost | O(\|s\| × \|t\|) worst case | O(\|s\| log \|t\|) |
+
+---
+
+### Complexity Summary
+
+| Approach | Preprocessing | Per Query | Total (k queries) |
+|---|---|---|---|
+| Two pointer | None | O(\|t\|) | O(k × \|t\|) |
+| Binary search | O(\|t\|) | O(\|s\| log\|t\|) | **O(\|t\| + k × \|s\| log\|t\|)** |
+
+> **When to use which:**
+> - Few queries → two pointer (simpler)
+> - Massive query volume against same `t` → preprocess + binary search
+
+
+## `Collections.binarySearch` — How it Works
+
+### What it returns
+```
+if FOUND    → returns the index where element exists (≥ 0)
+if NOT FOUND → returns  -(insertion point) - 1  (negative number)
+```
+
+> **Insertion point** = index where the element *would be inserted* to keep list sorted = first index with value **greater than** the target
+
+### Decode the negative return value
+```java
+int idx = Collections.binarySearch(positions, pointer);
+
+// if idx = -3
+// insertion point = -(-3) - 1 = 2
+// meaning: pointer would be inserted at index 2
+// meaning: positions.get(2) is the first value > pointer... 
+//          but we want first value >= pointer, so this is exactly what we need!
+```
+
+### All cases visualized
+```
+positions = [1, 3, 5, 7, 9],  pointer = 5
+
+Case 1: pointer EXISTS in list
+  binarySearch returns 2        (index of 5)
+  → positions.get(2) = 5 ✅ use directly
+
+Case 2: pointer DOES NOT EXIST
+  pointer = 4
+  binarySearch returns -3       (would insert at index 2)
+  insertion point = -(-3)-1 = 2
+  → positions.get(2) = 5 ✅ first value > 4, which is also >= 4
+
+Case 3: pointer LARGER than all elements
+  pointer = 10
+  binarySearch returns -6       (would insert at index 5)
+  insertion point = -(-6)-1 = 5
+  → index 5 == positions.size() → no valid position → return false ❌
+```
+
+### The one formula that handles all cases
+```java
+int idx = Collections.binarySearch(positions, pointer);
+if (idx < 0) idx = -idx - 1;  // convert to insertion point
+// now idx = first position >= pointer, regardless of found or not found
+```
+
+---
+
+## Updated Solution
+
+```java
+class Solution {
+    private Map<Character, List<Integer>> indexMap = new HashMap<>();
+
+    public void preprocess(String t) {
+        for (int i = 0; i < t.length(); i++) {
+            indexMap
+                .computeIfAbsent(t.charAt(i), k -> new ArrayList<>())
+                .add(i);
+        }
+    }
+
+    public boolean isSubsequence(String s, String t) {
+        int pointer = 0;
+
+        for (char c : s.toCharArray()) {
+            List<Integer> positions = indexMap.get(c);
+
+            if (positions == null) return false;
+
+            // Find first index in positions >= pointer
+            int idx = Collections.binarySearch(positions, pointer);
+            if (idx < 0) idx = -idx - 1;  // not found → convert to insertion point
+
+            // insertion point == size means pointer > all elements → no valid pos
+            if (idx == positions.size()) return false;
+
+            pointer = positions.get(idx) + 1;
+        }
+
+        return true;
+    }
+}
+```
+
+---
+
+## Concrete Trace: `s = "aac"`, `t = "aadc"`
+```
+map: a->[0,1], d->[2], c->[3]
+
+━━━ char='a', pointer=0 ━━━
+binarySearch([0,1], 0) → found → returns 0
+idx = 0
+pointer = positions.get(0) + 1 = 0 + 1 = 1
+
+━━━ char='a', pointer=1 ━━━
+binarySearch([0,1], 1) → found → returns 1
+idx = 1
+pointer = positions.get(1) + 1 = 1 + 1 = 2
+
+━━━ char='c', pointer=2 ━━━
+binarySearch([3], 2) → not found → returns -1
+idx = -(-1) - 1 = 0
+pointer = positions.get(0) + 1 = 3 + 1 = 4
+
+return true ✅
+```
+
+---
+
+## Manual vs `Collections.binarySearch`
+
+```java
+// These two blocks are exactly equivalent:
+
+// Manual
+int lo = 0, hi = positions.size() - 1, result = -1;
+while (lo <= hi) {
+    int mid = lo + (hi - lo) / 2;
+    if (positions.get(mid) >= pointer) { result = mid; hi = mid - 1; }
+    else lo = mid + 1;
+}
+if (result == -1) return false;
+pointer = positions.get(result) + 1;
+
+// Collections.binarySearch ← same thing, less code
+int idx = Collections.binarySearch(positions, pointer);
+if (idx < 0) idx = -idx - 1;
+if (idx == positions.size()) return false;
+pointer = positions.get(idx) + 1;
+```
+
+> **Remember:** `Collections.binarySearch` finds **exact match**. The `if (idx < 0) idx = -idx - 1` conversion is what turns it into a **"first element ≥ target"** search — this pattern is used constantly in competitive programming.
