@@ -1085,3 +1085,130 @@ Move left inward:
 |---|---|
 | **Time** | `O(n)` — single pass, each element visited once |
 | **Space** | `O(1)` — two pointers only |
+
+
+
+## Three Sum = 0
+
+### Intuition
+
+Brute force 3 nested loops = `O(n³)`. Instead:
+- **Sort** the array first
+- **Fix one number** and reduce to **two sum** on the rest using two pointers
+- Sorting lets us **skip duplicates** easily to avoid repeating triplets
+
+---
+
+### Key Observations
+```
+nums = [-4, -1, -1, 0, 1, 2]
+
+Fix nums[i] = -1
+→ need two numbers in the rest that sum to +1
+→ two pointer on remaining sorted subarray finds it in O(n)
+
+Skip duplicate i values → avoids duplicate triplets in result
+Skip duplicate left/right moves → same reason
+```
+
+---
+
+### Solution
+
+```java
+public List<List<Integer>> threeSum(int[] nums) {
+    Arrays.sort(nums);
+    List<List<Integer>> result = new ArrayList<>();
+
+    for (int i = 0; i < nums.length - 2; i++) {
+
+        // skip duplicate values for i
+        if (i > 0 && nums[i] == nums[i - 1]) continue;
+
+        // early exit — smallest possible sum already > 0
+        if (nums[i] > 0) break;
+
+        int left = i + 1, right = nums.length - 1;
+
+        while (left < right) {
+            int sum = nums[i] + nums[left] + nums[right];
+
+            if (sum == 0) {
+                result.add(Arrays.asList(nums[i], nums[left], nums[right]));
+
+                // skip duplicates for left and right
+                while (left < right && nums[left] == nums[left + 1]) left++;
+                while (left < right && nums[right] == nums[right - 1]) right--;
+
+                left++;
+                right--;
+
+            } else if (sum < 0) {
+                left++;       // sum too small, move left up
+            } else {
+                right--;      // sum too big, move right down
+            }
+        }
+    }
+
+    return result;
+}
+```
+
+---
+
+### Walkthrough: `nums = [-4,-1,-1,0,1,2]`
+
+```
+After sort: [-4, -1, -1, 0, 1, 2]
+
+━━━ i=0, nums[i]=-4 ━━━
+left=1(-1), right=5(2) → sum=-3 → too small → left++
+left=2(-1), right=5(2) → sum=-3 → too small → left++
+left=3( 0), right=5(2) → sum=-2 → too small → left++
+left=4( 1), right=5(2) → sum=-1 → too small → left++
+left=right → stop
+
+━━━ i=1, nums[i]=-1 ━━━
+left=2(-1), right=5(2) → sum=0  → ✅ add [-1,-1,2], skip dupes, left++ right--
+left=3( 0), right=4(1) → sum=0  → ✅ add [-1, 0,1], skip dupes, left++ right--
+left=right → stop
+
+━━━ i=2, nums[i]=-1 ━━━ → duplicate of i=1 → skip
+
+━━━ i=3, nums[i]=0 ━━━
+left=4(1), right=5(2) → sum=3 → too big → right--
+left=right → stop
+
+Result: [[-1,-1,2], [-1,0,1]] ✅
+```
+
+---
+
+### Duplicate Skipping — Why and How
+
+```java
+// Without duplicate skipping on i:
+// nums = [-2, 0, 0, 2, 2]
+// i=1 finds [0, 0, ... ] and i=2 finds same → duplicate triplet
+
+// Without duplicate skipping on left/right after finding a match:
+// nums = [-2, 0, 0, 2, 2]  (i fixed at -2)
+// left=1(0), right=4(2) → sum=0 → add [-2,0,2]
+// left++ → left=2(0), right-- → right=3(2) → sum=0 → add [-2,0,2] AGAIN ❌
+
+// The while loops skip over same values before the final left++ right--
+while (left < right && nums[left] == nums[left + 1]) left++;
+while (left < right && nums[right] == nums[right - 1]) right--;
+left++;   // ← still need this final move
+right--;
+```
+
+---
+
+### Complexity
+
+| | |
+|---|---|
+| **Time** | `O(n²)` — O(n log n) sort + O(n²) two pointer |
+| **Space** | `O(1)` extra, ignoring output list |
