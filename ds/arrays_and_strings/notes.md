@@ -157,6 +157,124 @@ while (map.size() > k) {
 - "Minimum window substring"
 - Any time the word **contiguous** appears with a constraint
 
+Great question! Your mental model is almost right — it just needs one small twist for **minimum** problems.
+
+---
+
+### Your current mental model
+```
+expand right → until valid
+shrink left  → until invalid
+repeat
+```
+This is perfect for **existence** or **maximum** window problems.
+
+---
+
+### The twist for MINIMUM window problems
+```
+expand right → until valid
+shrink left  → keep shrinking AS LONG AS still valid  ← this is the change
+               record size at each valid shrink step
+repeat
+```
+
+> For **maximum** you want the biggest valid window so you record BEFORE shrinking.
+> For **minimum** you want the smallest valid window so you record WHILE shrinking and keep going until it breaks.
+
+---
+
+### Side by side
+
+```
+MAXIMUM window (e.g longest subarray with sum ≤ k):
+  → record when you EXPAND and window is valid
+  → shrink only when window becomes INVALID
+  → goal: stretch as far as possible
+
+MINIMUM window (e.g shortest subarray with sum ≥ target):
+  → record when you SHRINK and window is still valid
+  → keep shrinking until window becomes INVALID
+  → goal: squeeze as tight as possible
+```
+
+---
+
+### Minimum Subarray Sum — visually
+
+```
+nums = [2,3,1,2,4,3], target = 7
+
+right=0  sum=2  [2]         sum<7  not valid yet, keep expanding
+right=1  sum=5  [2,3]       sum<7  not valid yet, keep expanding
+right=2  sum=6  [2,3,1]     sum<7  not valid yet, keep expanding
+right=3  sum=8  [2,3,1,2]   sum≥7  VALID → record len=4
+                                   → shrink left:
+                sum=6  [3,1,2]     sum<7  INVALID → stop shrinking
+right=4  sum=10 [3,1,2,4]   sum≥7  VALID → record len=4 (no improvement)
+                                   → shrink left:
+                sum=7  [1,2,4]     sum≥7  VALID → record len=3 ✅
+                                   → shrink left:
+                sum=6  [2,4]       sum<7  INVALID → stop shrinking
+right=5  sum=9  [2,4,3]     sum≥7  VALID → record len=3 (no improvement)
+                                   → shrink left:
+                sum=7  [4,3]       sum≥7  VALID → record len=2 ✅
+                                   → shrink left:
+                sum=3  [3]         sum<7  INVALID → stop shrinking
+
+answer = 2 ✅
+```
+
+---
+
+### Minimum Window Substring — same exact pattern
+
+```
+s="ADOBECODEBANC", t="ABC"
+
+right expands → until window contains all of t  (VALID)
+left shrinks  → keep shrinking while still contains all of t
+               record at each valid shrink step
+left shrinks one too far → invalid → stop, expand right again
+
+ADOBEC        valid → record len=6
+ DOBEC        invalid (lost A) → stop
+       ...expand...
+DOBECODEBA    valid → record len=10, no improvement
+ OBECODEBA    valid → record len=9,  no improvement
+  BECODEBA    valid → record len=8,  no improvement
+   ECODEBA    valid → record len=7,  no improvement
+    CODEBA    valid → record len=6,  no improvement
+     ODEBA    invalid (lost C) → stop
+          ...expand...
+     ODEBANC  valid → record len=7,  no improvement
+      DEBANC  valid → record len=6,  no improvement
+       EBANC  valid → record len=5 ✅
+        BANC  valid → record len=4 ✅
+         ANC  invalid (lost B) → stop
+
+answer = "BANC" ✅
+```
+
+---
+
+### The unified mental model
+
+```
+ALL sliding window problems:
+
+  expand right → one step at a time, update state
+
+  if MAXIMUM problem:
+      if valid   → record, keep expanding
+      if invalid → shrink left until valid again
+
+  if MINIMUM problem:
+      if invalid → keep expanding
+      if valid   → shrink left, record at each step, until invalid
+```
+
+> The core flip: in maximum you run AWAY from invalid, in minimum you run TOWARD it — squeezing until the window just barely breaks.
 ---
 
 ## Pattern 3: Prefix Sum
