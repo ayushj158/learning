@@ -1460,3 +1460,223 @@ private int heightForDiameter(TreeNode node) {
 ```
 
 Post when ready.
+
+
+
+## Tree Problems — Master Guide
+
+---
+
+### Why trees feel unnatural
+
+Arrays and lists are linear — you move forward. Trees are recursive — every node IS a smaller tree. Once that clicks, every tree problem becomes:
+
+```
+solve(root) = combine(solve(root.left), solve(root.right))
+```
+
+---
+
+### The one mental model for ALL tree problems
+
+```
+Ask yourself at EVERY node:
+  1. What do I need from my LEFT subtree?
+  2. What do I need from my RIGHT subtree?
+  3. How do I COMBINE them to answer for THIS node?
+  4. What do I return for NULL?
+```
+
+That's it. Every tree problem is just filling in those 4 questions.
+
+---
+
+### Maximum Depth — applying the model
+
+```
+What do I need from left?   → depth of left subtree
+What do I need from right?  → depth of right subtree
+How do I combine?           → max(left, right) + 1  (+ 1 for current node)
+What to return for null?    → 0 (null has no depth)
+```
+
+```
+Tree:     3
+         / \
+        9  20
+           / \
+          15   7
+
+solve(3):
+  left  = solve(9)  = 1
+  right = solve(20) = 2
+  return max(1,2)+1 = 3 ✅
+```
+
+---
+
+### Solution
+
+```java
+public int maxDepth(TreeNode root) {
+    if (root == null) return 0;                          // base case
+
+    int left  = maxDepth(root.left);                     // left answer
+    int right = maxDepth(root.right);                    // right answer
+
+    return Math.max(left, right) + 1;                    // combine
+}
+```
+
+---
+
+### Master Template — covers 90% of tree problems
+
+```java
+public int solve(TreeNode root) {
+    // 1. base case — what to return for null
+    if (root == null) return 0;   // (or false, null, etc.)
+
+    // 2. get answer from left subtree
+    int left = solve(root.left);
+
+    // 3. get answer from right subtree
+    int right = solve(root.right);
+
+    // 4. combine left + right + current node to get answer
+    return combine(left, right, root.val);
+}
+```
+
+---
+
+### Every common tree problem using this template
+
+```
+MAX DEPTH
+  combine = max(left, right) + 1
+  null    = 0
+
+MIN DEPTH
+  combine = min(left, right) + 1   ← but careful with one-sided null
+  null    = 0
+
+COUNT NODES
+  combine = left + right + 1
+  null    = 0
+
+SUM OF ALL NODES
+  combine = left + right + root.val
+  null    = 0
+
+HEIGHT BALANCED?
+  combine = abs(left-right) <= 1 && leftBalanced && rightBalanced
+  null    = true
+
+SAME TREE?
+  combine = root1.val==root2.val && sameTree(l1,l2) && sameTree(r1,r2)
+  null    = both null? true : false
+
+INVERT TREE
+  combine = swap left and right children
+  null    = return null
+```
+
+---
+
+### Three traversal patterns
+
+```
+// PREORDER — process node BEFORE children (top down)
+void preorder(TreeNode root) {
+    if (root == null) return;
+    process(root);           // ← first
+    preorder(root.left);
+    preorder(root.right);
+}
+
+// INORDER — process node BETWEEN children (left→node→right)
+void inorder(TreeNode root) {
+    if (root == null) return;
+    inorder(root.left);
+    process(root);           // ← middle
+    inorder(root.right);
+}
+// KEY: inorder on BST gives SORTED order
+
+// POSTORDER — process node AFTER children (bottom up)
+void postorder(TreeNode root) {
+    if (root == null) return;
+    postorder(root.left);
+    postorder(root.right);
+    process(root);           // ← last, after children done
+}
+// KEY: use when you need children's answers before current
+// maxDepth, diameter, etc. all use postorder logic
+```
+
+---
+
+### When to use which
+
+```
+need info from children first?    → POSTORDER (maxDepth, sum, diameter)
+need to pass info DOWN to children? → PREORDER (path problems, level info)
+need sorted order from BST?       → INORDER
+need level by level?              → BFS with queue
+```
+
+---
+
+### BFS template — level order traversal
+
+```java
+Queue<TreeNode> queue = new LinkedList<>();
+queue.offer(root);
+
+while (!queue.isEmpty()) {
+    int size = queue.size();          // nodes at current level
+
+    for (int i = 0; i < size; i++) {
+        TreeNode node = queue.poll();
+        process(node);                // do something at this level
+
+        if (node.left  != null) queue.offer(node.left);
+        if (node.right != null) queue.offer(node.right);
+    }
+    // one full level processed
+}
+```
+
+---
+
+### Common mistake — confusing what to return
+
+```
+// path sum — does path root→leaf equal target?
+// At null: return false? or 0?
+
+// Think: what makes sense?
+// We're checking existence → return boolean
+// null has no path → return false ✅
+
+// WRONG thinking: "just return 0 for null always"
+// RIGHT thinking: "what does null mean for THIS problem?"
+```
+
+---
+
+### Quick problem → pattern mapper
+
+```
+max/min depth           → postorder, max/min of children + 1
+count nodes/leaves      → postorder, sum children + 1
+path sum exists?        → preorder, pass remaining sum down
+all path sums           → preorder, build path as you go
+lowest common ancestor  → postorder, bubble up found nodes
+diameter               → postorder, track max(left+right) globally
+serialize/deserialize   → preorder
+level order             → BFS
+BST insert/search       → compare val, go left or right
+BST validate            → preorder, pass min/max bounds down
+```
