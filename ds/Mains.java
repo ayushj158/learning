@@ -1,10 +1,14 @@
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 
 public class Mains {
 
     public static void main(String[] args) {
-        System.out.println(longest_substtring_with_atmost_k_distinct("eceba", 2));
+        // System.out.println(longest_substtring_with_atmost_k_distinct("eceba", 2));
+
+        int[] nums = new int[] {1,2,3,4,5,6,7,8,9,10};
+        System.out.println(Arrays.stream(nums).max().getAsInt());
         
     }
 

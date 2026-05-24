@@ -561,3 +561,20 @@ Order o = first.orElseThrow(() -> new RuntimeException("Not found")); // or thro
 ---
 
 Streams ✅ done. **CompletableFuture next?**
+
+
+
+# Primitive vs Object Streams 
+
+
+Here's the full mental model to go with the widget:
+
+**The core rule**: Java has two parallel stream worlds — *primitive streams* (`IntStream`, `LongStream`, `DoubleStream`) and *object streams* (`Stream<T>`). The friction points are always at the boundary between them.
+
+**For `int[]` arrays**, `Arrays.stream(arr)` gives you an `IntStream` directly — no boxing, and you get `.sum()`, `.min()`, `.max()`, `.average()` for free. The moment you need a `List` or any `Collector`, you pay the boxing cost via `.boxed()`.
+
+**For `char[]`**, Java has no `CharStream`. The standard path is `new String(chars).chars()` which gives you an `IntStream` of Unicode code points (chars as ints). If you need `Stream<Character>`, use `.mapToObj(c -> (char) c)` — but that boxes every character into a `Character` object.
+
+**The `.mapToInt()` trick** is crucial when going the other direction — you have a `List<T>` and want a sum of some field. Instead of `.map()` then reducing, `.mapToInt(T::getField).sum()` unboxes cleanly and uses the optimized primitive path.
+
+**`reduce` vs `collect`**: `reduce` folds into a single value and works on primitive streams natively. `collect` mutates a container (List, Map, StringBuilder) and requires an object stream — except the 3-argument form of `collect` on `IntStream`, which lets you build a `StringBuilder` without boxing, great for filtered string reconstruction.
