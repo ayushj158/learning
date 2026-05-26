@@ -3,8 +3,16 @@ import java.time.Month;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
+import java.util.Random;
+import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 public class URLShortner {
     private final Map<String, String> cache = new ConcurrentHashMap<>();  // Redis simulation
@@ -12,9 +20,31 @@ public class URLShortner {
     private final SnowflakeIDGenerator idGenerator;
     private static final String BASE_URL = "https://short.gs/";
     private static final String CHARS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    
 
     public URLShortner(long serverId) {
         this.idGenerator = new SnowflakeIDGenerator(serverId);
+    }
+
+    public static void main(String[] args) {
+        ExecutorService executors = Executors.newFixedThreadPool(1000);
+        List<Future<String>> futures = new ArrayList<>();
+        Random rand = new Random();
+        for(int j=0;j<100; j++){
+           int count = j;
+           Future<String> query = executors.submit(()->{
+                System.out.println("Generating count="+ count);
+                StringBuilder sb = new StringBuilder();
+                for (int i=0; i<6; i++){
+                    sb.append(CHARS.charAt(rand.nextInt(62)));
+                }
+
+                String s = sb.toString();
+                System.out.println(s);
+                return s;
+            });
+            futures.add(query);
+        }
     }
 
     private String encode(long num) {
@@ -66,7 +96,6 @@ public class URLShortner {
         }
     }
 }
-
 
 class URLEntry {
     String shortCode;

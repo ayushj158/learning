@@ -1369,3 +1369,359 @@ class SnowflakeIDGenerator {
 ```
 
 Give it a go.
+
+
+## URL Shortener Revision
+
+Answer these questions verbally:
+
+1. What does a URL shortener do — core operations?
+2. How do you generate the short code — what algorithm and why?
+3. What is Snowflake ID — its components and why each exists?
+4. What's the create flow — which storage first and why?
+5. What's the resolve flow — cache vs DB?
+6. What's the difference between deactivate and delete?
+7. What are the race conditions and how handled?
+
+Go.
+
+Strong answer — very close. Let me fill gaps and answer your bottleneck question.
+
+---
+
+## What you got right ✅
+
+```
+✓ Three ID generation approaches
+✓ Snowflake components — timestamp + serverID + sequence
+✓ Write-through — DB first then Redis
+✓ Read-aside — Redis first, miss → DB → populate Redis
+✓ Deactivate vs delete distinction
+✓ Synchronized for sequence generation
+```
+
+---
+
+## Small gaps
+
+### Gap 1 — why DB first not Redis first on create
+
+```
+Redis first:
+  Redis.set → success
+  DB.insert → FAILS
+  → Redis has URL, DB doesn't
+  → Redis evicts → URL lost forever ✗
+
+DB first:
+  DB.insert → success
+  Redis.set → FAILS
+  → next resolve → cache miss → loads from DB ✓
+  → eventually consistent, no data loss ✓
+
+DB = source of truth always
+```
+
+### Gap 2 — resolve flow detail
+
+```
+resolve(shortCode):
+  1. Redis.get(shortCode) → hit → return ✓ (fast path)
+  2. miss → DB.get(shortCode)
+  3. if null → 404
+  4. if !isActive → 410 Gone
+  5. Redis.set(shortCode, longUrl, TTL=24hrs)  ← populate cache
+  6. return longUrl
+```
+
+### Gap 3 — deactivate flow
+
+```
+deactivate(shortCode):
+  1. DB.update(isActive=false)  ← soft delete
+  2. Redis.delete(shortCode)    ← invalidate cache immediately
+  
+  Why invalidate cache?
+  Without: Redis serves deactivated URL for up to TTL duration
+  With: next resolve → cache miss → DB → sees isActive=false → 410
+```
+
+---
+
+## Your question — is synchronized a bottleneck?
+
+```java
+public synchronized long nextId() {
+    // only one thread at a time
+}
+```
+
+Yes — potential bottleneck at high scale:
+
+```
+Single server: 1000 creates/sec
+synchronized → sequential ID generation
+→ 1000 lock acquisitions per second
+→ each lock ~microseconds
+→ 1ms total overhead → acceptable ✓
+
+Multiple servers: each has own Snowflake generator
+→ no cross-server contention
+→ serverID differentiates IDs
+→ no bottleneck ✓
+```
+
+---
+
+## When it BECOMES a bottleneck
+
+```
+Single server: 1,000,000 creates/sec
+synchronized → 1M lock acquisitions/sec
+→ lock contention → threads queue up
+→ latency spikes ✗
+```
+
+---
+
+## Fix — CAS instead of synchronized
+
+```java
+// pack timestamp + sequence into one AtomicLong
+// use CAS for lock-free generation
+private final AtomicLong state = new AtomicLong(0);
+
+public long nextId() {
+    while (true) {
+        long current = state.get();
+        long currentTs  = current >> 12;
+        long currentSeq = current & 0xFFF;
+
+        long now = System.currentTimeMillis() - EPOCH;
+        long newSeq = now == currentTs ? currentSeq + 1 : 0;
+
+        if (newSeq > 4095) continue;  // sequence exhausted, retry
+
+        long newState = (now << 12) | newSeq;
+        if (state.compareAndSet(current, newState)) {
+            return (now << 22) | (serverId << 12) | newSeq;
+        }
+        // CAS failed → another thread updated → retry
+    }
+}
+```
+
+Lock-free → no thread blocking → scales to millions/sec.
+
+---
+
+## Summary — bottleneck answer for interview
+
+*"synchronized is fine for moderate load — microsecond overhead per ID generation. At extreme scale, replace with CAS on AtomicLong packing timestamp and sequence — lock-free so threads never block each other. Multiple servers each have own Snowflake generator with unique serverID — no cross-server contention regardless of approach."*
+
+---
+
+Ready for **Parking Lot revision** or move to new LLD problems?
+
+
+## Parking Lot Revision
+
+Answer these questions verbally:
+
+1. What are the core entities?
+2. How did we store available spots and why?
+3. How does park() work — what's the time complexity?
+4. How does unpark() work?
+5. How did we handle thread safety?
+6. How to extend for pricing?
+
+Go.
+
+Strong answer — close but a few corrections and gaps.
+
+---
+
+## Correction 1 — Queue not Set for available slots
+
+```
+Set<Slot> → no ordering, O(n) to get next available
+
+Queue<Slot> → O(1) poll() for next available slot
+→ ConcurrentLinkedQueue or LinkedBlockingQueue
+```
+
+---
+
+## Correction 2 — Ticket not "ParkedDetails"
+
+```
+We called it Ticket:
+  ticketId
+  vehicleNumber
+  spot
+  entryTime
+
+Key in activeTickets = ticketId not slotId
+→ unpark takes ticketId
+```
+
+---
+
+## Your race condition — exactly right ✅
+
+```
+Thread1: queue.poll() → gets Slot A
+Thread2: queue.poll() → gets Slot A (same slot!)
+→ two cars parked in same slot
+```
+
+Fix:
+```
+ConcurrentLinkedQueue.poll() is atomic — CAS based
+Two threads can NEVER get same element from poll()
+→ race condition doesn't exist with ConcurrentLinkedQueue ✓
+```
+
+---
+
+## What you missed — pricing extension
+
+```
+Parking Lot Pricing System (GS question):
+
+Strategy pattern:
+  interface PricingStrategy { double calculate(long duration); }
+  class HourlyPricing   implements PricingStrategy
+  class FlatRatePricing implements PricingStrategy
+  class PeakHourPricing implements PricingStrategy
+
+Each floor/spot type has own pricing strategy
+```
+
+---
+
+## Full summary
+
+```
+Entities:   ParkingSpot, Ticket, ParkingLot, Floor
+Available:  Map<VehicleType, ConcurrentLinkedQueue<ParkingSpot>>
+Active:     Map<String, Ticket>  ← ticketId → ticket
+park():     poll() from queue → create ticket → store → O(1)
+unpark():   get ticket → return spot to queue → O(1)
+Thread safe: ConcurrentLinkedQueue.poll() is atomic ✓
+Pricing:    Strategy pattern per spot type
+```
+
+---
+
+Ready for **new LLD problems — Splitwise first?**
+
+
+## ConcurrentLinkedQueue vs LinkedBlockingQueue
+
+---
+
+## Core difference — one line each
+
+```
+ConcurrentLinkedQueue: lock-free, never blocks, unbounded
+LinkedBlockingQueue:   lock-based, can block, optionally bounded
+```
+
+---
+
+## Internals
+
+### ConcurrentLinkedQueue
+```
+Uses CAS (Compare And Swap) — no locks at all
+poll(): CAS on head node → atomic, never blocks
+offer(): CAS on tail node → atomic, never blocks
+
+Two threads poll simultaneously:
+  Thread1 CAS: head=A, set head=B → succeeds → gets A
+  Thread2 CAS: head=A, set head=B → FAILS (already B) → retry → gets B
+  → never same element ✓
+```
+
+### LinkedBlockingQueue
+```
+Two separate ReentrantLocks:
+  putLock  → producers
+  takeLock → consumers
+
+poll(): acquires takeLock → removes head → releases
+offer(): acquires putLock → adds tail → releases
+
+put():  blocks if full (bounded)
+take(): blocks if empty
+```
+
+---
+
+## Comparison table
+
+| | ConcurrentLinkedQueue | LinkedBlockingQueue |
+|---|---|---|
+| Thread safety | CAS lock-free | ReentrantLock |
+| Blocking ops | None | put(), take() |
+| Bounded | No | Optional |
+| Throughput | Higher | Lower |
+| Memory | Lower | Higher (lock objects) |
+| size() | O(n) approximate | O(1) exact |
+| Use case | High throughput concurrent | Producer-consumer |
+
+---
+
+## For Parking Lot — which is better?
+
+```
+Parking lot needs:
+  poll() → get next available spot
+  offer() → return spot after unpark
+  no blocking needed — if full just return "lot full"
+  no producer-consumer pattern
+
+→ ConcurrentLinkedQueue ✓
+  lock-free → highest throughput
+  no blocking → park() returns immediately if full
+  unbounded → ok (bounded by physical spots anyway)
+```
+
+---
+
+## When to use LinkedBlockingQueue instead
+
+```
+Need blocking:
+  "Wait until spot available" → take() blocks
+  → LinkedBlockingQueue ✓
+
+Need bounded:
+  "Reject if queue full" → offer() returns false
+  → LinkedBlockingQueue with capacity ✓
+
+Producer-consumer:
+  Order processing pipeline
+  Notification delivery
+  → LinkedBlockingQueue ✓
+```
+
+---
+
+## Finance examples
+
+```
+ConcurrentLinkedQueue:
+  Trade audit trail — append only, no blocking needed
+  Available slot pool — high concurrent access, no waiting
+
+LinkedBlockingQueue:
+  Order processing pipeline — producers submit, consumers process
+  Risk calculation queue — bounded, backpressure needed
+  Notification delivery — async, bounded queue
+```
+
+---
+
+Clear? Ready for **Splitwise**?
