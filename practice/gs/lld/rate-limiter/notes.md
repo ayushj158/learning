@@ -585,3 +585,230 @@ Token Bucket handles all of these with just two parameters — capacity and refi
 ---
 
 Clear? Ready for TTL Cache now?
+
+
+> can i check if we manage resource and desk as one unit instance the number of instances grows massively ...how can we do efficient and scalable locking but do strategy object per resource only and redis hold configs for each customer(desk A) ....also asses in prod system which is pattern to be applooed
+
+Great question — you're thinking like a real architect now. Let me address both.
+
+---
+
+## Problem — too many strategy instances
+
+```
+Resources: 1000 APIs
+Desks:     500 trading desks
+Combos:    1000 * 500 = 500,000 strategy instances!
+
+Each has:
+  ReentrantLock object
+  counter/tokens
+  timestamps
+  
+→ massive memory footprint
+→ GC pressure
+→ not scalable
+```
+
+---
+
+## Solution 1 — Strategy per resource, config per client
+
+Instead of strategy per resource+client combination:
+
+```
+Strategy per resource (1000 instances only):
+  trade-api → FixedWindowStrategy
+  market-data → TokenBucketStrategy
+
+Config per client stored separately:
+  trade-api:deskA → limit=100/sec
+  trade-api:deskB → limit=10/sec
+  
+Strategy instance reads client config dynamically:
+  isAllowed(resourceId, clientId):
+    config = configService.getConfig(resourceId, clientId)
+    → uses config.limit for THIS client
+```
+
+```java
+class FixedWindow implements RateLimitStrategy {
+    // NO hardcoded limit — reads from config
+    private final ConfigService configService;
+    
+    // ONE counter map for ALL clients of this resource
+    private final ConcurrentHashMap<String, AtomicInteger> counters
+                                        = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Long> windowStarts
+                                        = new ConcurrentHashMap<>();
+
+    public boolean isAllowed(String resourceId, String clientId) {
+        // get client-specific limit from config
+        int limit = configService.getLimit(resourceId, clientId);
+        
+        // get/create counter for this client
+        counters.computeIfAbsent(clientId, k -> new AtomicInteger(0));
+        windowStarts.computeIfAbsent(clientId, k -> System.currentTimeMillis());
+
+        long now = System.currentTimeMillis();
+        long windowStart = windowStarts.get(clientId);
+
+        // reset window if expired
+        if (now - windowStart > 1000) {
+            counters.get(clientId).set(0);
+            windowStarts.put(clientId, now);
+        }
+
+        // atomic increment and check
+        return counters.get(clientId).incrementAndGet() <= limit;
+    }
+}
+```
+
+Now:
+```
+Strategy instances: 1000 (one per resource)
+Counter maps:       1000 maps, each with 500 entries
+Memory:             ~1000 * 500 * (AtomicInteger + Long) = manageable
+```
+
+---
+
+## Solution 2 — Stripe locking (fine-grained without per-client lock)
+
+Instead of one lock per client — use a fixed pool of locks:
+
+```java
+private static final int STRIPE_COUNT = 256;
+private final ReentrantLock[] stripes = new ReentrantLock[STRIPE_COUNT];
+
+// initialize
+for (int i = 0; i < STRIPE_COUNT; i++) {
+    stripes[i] = new ReentrantLock();
+}
+
+// get lock for a client
+private ReentrantLock getLock(String clientId) {
+    int index = Math.abs(clientId.hashCode() % STRIPE_COUNT);
+    return stripes[index];
+}
+
+public boolean isAllowed(String resourceId, String clientId) {
+    ReentrantLock lock = getLock(clientId);
+    lock.lock();
+    try {
+        // check and update counter
+    } finally {
+        lock.unlock();
+    }
+}
+```
+
+```
+500,000 clients → 256 locks
+clients hash to different stripes
+collision probability = 1/256
+→ 99.6% of clients never block each other
+→ fixed memory for locks regardless of client count
+```
+
+This is exactly how ConcurrentHashMap works internally.
+
+---
+
+## Solution 3 — AtomicInteger per client (lock-free)
+
+```java
+private final ConcurrentHashMap<String, AtomicInteger> counters
+                                    = new ConcurrentHashMap<>();
+
+public boolean isAllowed(String clientId, int limit) {
+    AtomicInteger counter = counters.computeIfAbsent(
+        clientId, k -> new AtomicInteger(0));
+    
+    return counter.incrementAndGet() <= limit;
+    // CAS operation — no explicit lock needed
+}
+```
+
+Lock-free — uses hardware CAS. Scales to millions of clients.
+
+---
+
+## Redis for config — correct thinking
+
+```
+Config stored in Redis:
+  HSET rate-limit:trade-api deskA 100
+  HSET rate-limit:trade-api deskB 10
+  HSET rate-limit:market-data deskA 500
+
+Application reads on startup → caches locally
+Hot reload — Redis pub/sub notifies when config changes
+→ application updates local cache
+
+Benefits:
+  Config changes without restart
+  Centralized — all servers see same config
+  Fast — local cache for hot path
+```
+
+---
+
+## Production pattern — which to apply?
+
+For GS IB platform specifically:
+
+```
+Scale:     1000+ APIs, 500+ desks, millions of requests/sec
+Latency:   <1ms requirement for trading APIs
+HA:        99.99% uptime required
+```
+
+**Recommended production pattern:**
+
+```
+Layer 1 — API Gateway (Kong/Nginx):
+  Coarse limits — block obvious abuse at edge
+  Simple fixed window per IP/client
+  No DB needed — in-memory only
+
+Layer 2 — Local L1 Cache (per server):
+  AtomicInteger per clientId per resource
+  Stripe locking for thread safety
+  Config from Redis with local cache
+  Handles 99% of traffic without Redis call
+  Window reset via scheduled thread
+
+Layer 3 — Redis Cluster (L2, source of truth):
+  Lua script for atomic check+increment
+  EXPIRE for window management
+  Only consulted on L1 miss or strict limits
+  Composite key: resource:client:window
+
+Layer 4 — Config Service:
+  Per-client limits stored in Redis/DB
+  Hot reload via pub/sub
+  Tiered limits: GOLD=1000/s, SILVER=100/s, BRONZE=10/s
+```
+
+```
+Request flow:
+1. API Gateway coarse check (1ms)
+2. L1 local AtomicInteger check (0.1ms)
+3. If L1 miss → Redis Lua check (1-2ms)
+4. If Redis down → L1 fallback with conservative limit
+5. Log all blocks to Kafka for audit
+```
+
+---
+
+## What to say in interview
+
+*"One strategy instance per resource, not per resource+client — strategy holds a ConcurrentHashMap of AtomicInteger counters keyed by clientId. Stripe locking gives fixed memory for locks regardless of client count. Config per client stored in Redis with local cache for hot path — hot reload via pub/sub. For strict limits on critical APIs, Redis Lua script for distributed atomicity. API gateway handles coarse first-line defence."*
+
+---
+
+This is a genuine VP-level answer. Ready for **TTL Cache revision**?
+
+

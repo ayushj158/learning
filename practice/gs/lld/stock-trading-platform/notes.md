@@ -734,3 +734,130 @@ class TradingService {
 ---
 
 Stock Trading Platform ✅ done. **URL Shortener or Parking Lot next?**
+
+
+
+## Stock Trading Platform Revision
+
+Answer these questions verbally:
+
+1. What are the core domain entities?
+2. What is an Order Book and why do we need it?
+3. How does matching work — what data structures for bids and asks?
+4. What happens when a trade is matched — what's settlement?
+5. Where are the race conditions and how did we solve them?
+6. What design patterns did we use?
+
+Go.
+
+Strong answer — very close. Two small corrections:
+
+---
+
+## Correction 1 — Heap directions are flipped
+
+```
+BUY orders  → MAX heap  (highest bid first — best buyer willing to pay most)
+SELL orders → MIN heap  (lowest ask first — best seller willing to accept least)
+
+Match when: bestBid (max of buys) >= bestAsk (min of sells)
+```
+
+You said:
+```
+buy side min heap  ← WRONG
+sell side max heap ← WRONG
+```
+
+Think about it:
+```
+As a buyer — you want to match with cheapest seller first
+As a seller — you want to match with highest bidder first
+
+So:
+BUY heap  → MAX heap → highest bidder at top → matches cheapest seller
+SELL heap → MIN heap → cheapest seller at top → matches highest bidder
+```
+
+---
+
+## Correction 2 — CHM for all indices ✅
+
+```
+Map<String, OrderBook> orderBooks = new ConcurrentHashMap<>();
+// key = ticker symbol "AAPL", "GOOG"
+// value = OrderBook with bids + asks heaps
+```
+
+AAPL and GOOG order books never block each other ✓
+
+---
+
+## What you missed — settlement
+
+When bid >= ask → trade executes:
+
+```
+Buyer:  wallet  -= qty * executionPrice
+        portfolio += qty of stock
+
+Seller: wallet  += qty * executionPrice
+        portfolio -= qty of stock
+
+Trade record created → immutable audit trail
+Stock price updated → executionPrice becomes latest price
+```
+
+---
+
+## What you missed — race conditions
+
+```
+Race 1: Two buyers matching same ask simultaneously
+→ OrderBook has ReentrantLock per symbol
+→ AAPL matching locked independently from GOOG
+
+Race 2: Buyer wallet deducted but order never fills
+→ Reserve funds upfront on BUY order placement
+→ Refund if order cancelled
+
+Race 3: Seller sells more than they own
+→ Validate portfolio holdings before accepting SELL order
+→ synchronized on portfolio per user
+```
+
+---
+
+## Design patterns
+
+```
+Domain Model:    User, Account, Portfolio, Order, Stock, Trade
+Service Layer:   TradingService orchestrates everything
+Repository:      AccountService, PortfolioService, StockService
+Observer:        Trade events → notify subscribers (our notification system!)
+Strategy:        Order types — Market, Limit, Stop (extensible)
+```
+
+---
+
+## Full domain picture — say this in interview
+
+```
+User        → identity only
+Account     → owns wallet (balance + transactions)
+Portfolio   → owns positions (symbol + qty + avgPrice)
+Order       → placed by user, matched by OrderBook
+OrderBook   → one per symbol, two heaps (MaxHeap bids, MinHeap asks)
+Trade       → immutable record of matched order
+Stock       → price + history
+```
+
+---
+
+## One liner
+
+*"CHM of OrderBooks keyed by symbol — each OrderBook has MaxHeap for bids and MinHeap for asks. Match when bestBid >= bestAsk. ReentrantLock per OrderBook for thread safety. Settlement updates buyer wallet/portfolio and seller wallet/portfolio atomically. Funds reserved upfront to prevent overdraft."*
+
+---
+
+Ready for **URL Shortener revision** or move to new LLD problems?

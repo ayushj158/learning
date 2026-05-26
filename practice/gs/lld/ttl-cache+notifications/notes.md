@@ -917,3 +917,439 @@ Notification System ✅ done.
 - Parking Lot
 
 Which one next?
+
+
+Excellent — really strong answer. You clearly understand it deeply. Let me fill small gaps:
+
+---
+
+## What you got right ✅
+
+```
+✓ CHM for O(1) get/put
+✓ MinHeap sorted by expiryTime = now + ttlMs
+✓ Lazy eviction in get() — check expiry, remove from map
+✓ Proactive evict() on scheduler
+✓ Stale heap entry problem — check map value matches before removing
+✓ Race conditions identified correctly
+✓ compute() for atomic check-then-remove
+```
+
+---
+
+## Small gaps to fill
+
+### Gap 1 — get() lazy eviction using compute()
+
+```java
+// NOT two separate operations:
+if (expired) cache.remove(key);  // ← race condition
+
+// ATOMIC via compute():
+cache.compute(key, (k, entry) -> {
+    if (entry == null) return null;
+    if (expired(entry)) return null;  // atomic remove
+    return entry;                      // keep
+});
+```
+
+---
+
+### Gap 2 — PriorityBlockingQueue not PriorityQueue
+
+```
+PriorityQueue → not thread safe
+PriorityBlockingQueue → thread safe, internal lock
+→ evict() and put() both touch heap
+→ need thread safety on heap too
+```
+
+---
+
+### Gap 3 — stale heap entry check
+
+```java
+// in evict():
+cache.remove(entry.getKey(), entry);  // conditional remove
+// only removes if SAME object reference still in map
+// if put() updated key → new object in map → remove does nothing ✓
+```
+
+This uses reference equality — works because put() always creates NEW CacheEntry object.
+
+---
+
+### Gap 4 — ReadWriteLock not needed
+
+You mentioned ReadWriteLock for evict vs get — actually not needed because:
+
+```
+get()    → compute() on CHM → bucket level lock only
+evict()  → remove(key, entry) on CHM → bucket level lock only
+put()    → put() on CHM → bucket level lock only
+
+Different keys → different buckets → fully parallel ✓
+Same key → bucket lock → sequential ✓
+
+ReadWriteLock would be global → unnecessary overhead
+CHM's bucket-level locking is sufficient
+```
+
+---
+
+## One liner for interview
+
+*"CHM for O(1) get/put with bucket-level locking, PriorityBlockingQueue for O(log n) eviction ordered by expiryTime. Lazy eviction in get() via compute() for atomic check-remove. Background scheduler for proactive cleanup. Stale heap entries handled by conditional remove(key, entry) — only removes if same object reference still in map."*
+
+---
+
+Ready for **Notification System revision**?
+
+
+## PriorityBlockingQueue — offer and poll internals
+
+---
+
+## Internal lock
+
+PBQ has ONE internal ReentrantLock:
+
+```java
+// inside PriorityBlockingQueue source
+private final ReentrantLock lock = new ReentrantLock();
+private final Condition notEmpty = lock.newCondition();
+```
+
+---
+
+## offer() — never blocks
+
+```java
+public boolean offer(E e) {
+    lock.lock();
+    try {
+        siftUp(size, e);  // heapify up — O(log n)
+        size++;
+        notEmpty.signal(); // wake any waiting take()
+        return true;
+    } finally {
+        lock.unlock();
+    }
+}
+```
+
+```
+offer() acquires lock → heapify → release
+Never blocks — unbounded queue, always space
+Returns true always
+```
+
+---
+
+## poll() — non-blocking
+
+```java
+public E poll() {
+    lock.lock();
+    try {
+        if (size == 0) return null;  // empty → return null immediately
+        return dequeue();            // heapify down — O(log n)
+    } finally {
+        lock.unlock();
+    }
+}
+```
+
+```
+poll() acquires lock → remove min → heapify down → release
+Never blocks — returns null if empty
+```
+
+---
+
+## take() — BLOCKS if empty
+
+```java
+public E take() throws InterruptedException {
+    lock.lock();
+    try {
+        while (size == 0)
+            notEmpty.await();  // releases lock and WAITS
+        return dequeue();
+    } finally {
+        lock.unlock();
+    }
+}
+```
+
+```
+take() blocks if empty — waits until offer() signals
+```
+
+---
+
+## Your point — we only use offer() and poll()
+
+```
+put()    → calls offer() internally (same thing)
+evict()  → calls poll() internally
+
+Both acquire same internal lock
+→ offer and poll never interleave
+→ heap always consistent ✓
+```
+
+---
+
+## Race condition between offer() and poll()
+
+```
+Thread1: offer(newEntry) → acquires lock
+Thread2: poll()          → waits for lock
+Thread1 releases → Thread2 acquires → sees updated heap ✓
+
+Thread1: poll()          → acquires lock
+Thread2: offer(newEntry) → waits for lock
+Thread1 releases → Thread2 acquires → inserts correctly ✓
+```
+
+Single internal lock → offer and poll are always sequential → no corruption.
+
+---
+
+## Why PBQ is sufficient for TTL Cache
+
+```
+TTL Cache operations on heap:
+  put()    → offer() → O(log n), thread safe ✓
+  evict()  → poll()  → O(log n), thread safe ✓
+  get()    → NO heap access → doesn't need heap lock ✓
+
+So:
+  get() and put() → parallel on different CHM buckets ✓
+  get() and evict() → parallel (get doesn't touch heap) ✓
+  put() and evict() → sequential via PBQ internal lock ✓
+```
+
+---
+
+## One concern — put() + evict() contention
+
+```
+Thousands of put() per second
+Background evict() every second
+
+Both acquire PBQ lock:
+  put() → O(log n) per entry
+  evict() → O(k log n) for k expired entries
+
+During evict() → all put() wait for heap lock
+→ brief pause in cache writes
+
+For most use cases acceptable.
+For ultra-low latency → drop heap entirely:
+  lazy eviction only in get()
+  background scan of CHM map
+  → no heap → no heap lock contention
+```
+
+---
+
+## Summary
+
+```
+offer(): lock → heapify up   → unlock (never blocks)
+poll():  lock → heapify down → unlock (never blocks, null if empty)
+take():  lock → wait if empty → heapify down → unlock (blocks)
+
+We use offer + poll → never block → safe ✓
+Single internal lock → heap always consistent ✓
+get() doesn't touch heap → fully parallel with put/evict ✓
+```
+
+---
+
+Clear? Ready for **Notification System revision**?
+
+Good attempt — core logic is right but several issues. Let me go through them:
+
+---
+
+## Issue 1 — Wrong imports
+
+```java
+import java.nio.channels.Channel;     // ← wrong Channel (NIO)
+import javax.swing.event.DocumentEvent.EventType;  // ← wrong EventType (Swing)
+```
+
+These should be your own enums:
+```java
+enum Channel   { EMAIL, SMS, PUSH }
+enum EventType { TRADE_EXECUTED, RISK_BREACH, PRICE_ALERT }
+```
+
+---
+
+## Issue 2 — ThreadPoolExecutor with BlockingQueue
+
+```java
+new ThreadPoolExecutor(10, 20, 60, TimeUnit.MICROSECONDS, 
+    new BlockingQueue<Runnable>(() -> {}));  // ← can't instantiate interface
+```
+
+BlockingQueue is an interface — use `LinkedBlockingQueue`:
+```java
+private final ExecutorService executor = 
+    new ThreadPoolExecutor(10, 20, 60, TimeUnit.SECONDS, 
+        new LinkedBlockingQueue<>(1000));
+```
+
+Also remove `executor1` — just use one executor.
+
+---
+
+## Issue 3 — subscribe() type mismatch
+
+```java
+.computeIfAbsent(userId, k -> new HashSet<>())  // ← Set<Channel> ✓
+// but inner map declared as Map<String, List<Channel>>
+// should be Map<String, Set<Channel>>
+```
+
+---
+
+## Issue 4 — notify() lambda is wrong
+
+```java
+map.entrySet().forEach((userId, channels) -> ...)
+// entrySet() gives Map.Entry not (key, value) directly
+// also variable name 'channels' shadows outer 'channels' map
+```
+
+---
+
+## Issue 5 — notify() submits one task for ALL users
+
+```java
+executor.submit(() -> {
+    map.entrySet().forEach(...)  // all users in one task
+});
+```
+
+Better — submit one task per user per channel for true parallelism:
+
+```java
+map.forEach((userId, userChannels) ->
+    userChannels.forEach(channel ->
+        executor.submit(() -> 
+            channels.get(channel).send(userId, message))));
+```
+
+---
+
+## Clean corrected version
+
+```java
+enum EventType { TRADE_EXECUTED, RISK_BREACH, PRICE_ALERT }
+enum Channel   { EMAIL, SMS, PUSH }
+
+interface NotificationChannel {
+    void send(String userId, String message);
+}
+
+class EmailChannel implements NotificationChannel {
+    public void send(String userId, String message) {
+        System.out.println("EMAIL to " + userId + ": " + message);
+    }
+}
+
+class SMSChannel implements NotificationChannel {
+    public void send(String userId, String message) {
+        System.out.println("SMS to " + userId + ": " + message);
+    }
+}
+
+class PushChannel implements NotificationChannel {
+    public void send(String userId, String message) {
+        System.out.println("PUSH to " + userId + ": " + message);
+    }
+}
+
+class NotificationService {
+    private final Map<EventType, Map<String, Set<Channel>>> subscriptions
+                                            = new ConcurrentHashMap<>();
+
+    private final Map<Channel, NotificationChannel> channelImpls = Map.of(
+        Channel.EMAIL, new EmailChannel(),
+        Channel.SMS,   new SMSChannel(),
+        Channel.PUSH,  new PushChannel()
+    );
+
+    private final ExecutorService executor =
+        new ThreadPoolExecutor(
+            10, 20, 60, TimeUnit.SECONDS,
+            new LinkedBlockingQueue<>(1000));
+
+    public void subscribe(String userId, EventType eventType, Channel channel) {
+        subscriptions
+            .computeIfAbsent(eventType, k -> new ConcurrentHashMap<>())
+            .computeIfAbsent(userId, k -> ConcurrentHashMap.newKeySet())  // thread-safe Set
+            .add(channel);
+    }
+
+    public void unsubscribe(String userId, EventType eventType, Channel channel) {
+        Map<String, Set<Channel>> userMap = subscriptions.get(eventType);
+        if (userMap == null) return;
+        Set<Channel> userChannels = userMap.get(userId);
+        if (userChannels == null) return;
+        userChannels.remove(channel);
+    }
+
+    public void notify(EventType eventType, String message) {
+        Map<String, Set<Channel>> userMap = subscriptions.get(eventType);
+        if (userMap == null) return;
+
+        // submit one task per user per channel — true parallelism
+        userMap.forEach((userId, userChannels) ->
+            userChannels.forEach(channel ->
+                executor.submit(() ->
+                    channelImpls.get(channel).send(userId, message))));
+    }
+
+    public void shutdown() {
+        executor.shutdown();
+    }
+}
+```
+
+---
+
+## Key fixes summary
+
+```
+✗ Wrong imports → use own enums
+✗ BlockingQueue interface → LinkedBlockingQueue
+✗ List<Channel> → Set<Channel>
+✗ entrySet forEach → forEach with (key, value)
+✗ One task for all → one task per user per channel
+✓ ConcurrentHashMap.newKeySet() for thread-safe Set
+✓ Renamed 'channels' map to 'channelImpls' — no shadowing
+```
+
+---
+
+## ThreadPoolExecutor parameters — say this in interview
+
+```java
+new ThreadPoolExecutor(
+    10,                          // corePoolSize — always alive
+    20,                          // maxPoolSize — max under load
+    60, TimeUnit.SECONDS,        // keepAlive — shrink idle threads
+    new LinkedBlockingQueue<>(1000))  // bounded queue — backpressure
+```
+
+*"Bounded queue with 1000 capacity provides backpressure — if all 20 threads busy and queue full, caller gets RejectedExecutionException rather than OOM. For trading notifications this is acceptable — better to reject than crash."*
+
+---
+
+Ready for **Stock Trading Platform revision**?

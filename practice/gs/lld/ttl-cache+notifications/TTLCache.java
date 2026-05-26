@@ -1,11 +1,15 @@
 import java.util.HashMap;
 import java.util.Map;
 import java.util.PriorityQueue;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 
 public class TTLCache {
 
     Map<String, CacheEntry> cache = new HashMap<>();
     PriorityQueue<CacheEntry> queue;
+    ScheduledExecutorService executor = Executors.newScheduledThreadPool(10) ;
+  
 
     public TTLCache(){  
         this.cache = new HashMap<>();
