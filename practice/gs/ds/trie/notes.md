@@ -584,3 +584,255 @@ bat
 
 Ready for **LC 211 — Wildcard Search**?
 
+## LC 211 — Search with Wildcard
+
+> Design a data structure that supports adding words and searching for words with wildcard `.` which matches any single character.
+
+```java
+WordDictionary dict = new WordDictionary();
+dict.addWord("bad");
+dict.addWord("dad");
+dict.addWord("mad");
+
+dict.search("pad") → false
+dict.search("bad") → true
+dict.search(".ad") → true  ← '.' matches 'b','d','m'
+dict.search("b..") → true  ← '..' matches 'ad'
+dict.search("...") → true  ← matches any 3-char word
+dict.search("b.d.") → false ← 4 chars, none inserted
+```
+
+---
+
+## How is this different from LC 208?
+
+```
+LC 208: search exact string
+        → simple traversal, char by char
+
+LC 211: '.' matches ANY character
+        → when you see '.', you must try ALL children
+        → can't just follow one path
+        → need DFS backtracking
+```
+
+---
+
+## The key insight
+
+```
+Normal char 'b':
+  go to children['b'] only → one path
+
+Wildcard '.':
+  go to children['b'], children['d'], children['m']...
+  try ALL children → multiple paths
+  if ANY path returns true → return true
+```
+
+---
+
+## Before coding — two questions:
+
+1. `addWord()` — same as Trie insert, no change needed. Agree?
+2. `search()` — when you hit `.`, what do you do?
+
+Take a shot at the search logic.
+
+Good question — yes you CAN but DFS is better here. Let me explain why.
+
+---
+
+## BFS approach — works but complex
+
+```
+For each level of BFS:
+  if char is normal → only keep nodes matching that char
+  if char is '.' → keep ALL children nodes
+
+Track all possible nodes at each level:
+```
+
+```java
+public boolean search(String word) {
+    Set<TrieNode> currentNodes = new HashSet<>();
+    currentNodes.add(root);
+
+    for (char c : word.toCharArray()) {
+        Set<TrieNode> nextNodes = new HashSet<>();
+
+        for (TrieNode node : currentNodes) {
+            if (c == '.') {
+                // add ALL children
+                nextNodes.addAll(node.children.values());
+            } else {
+                // add only matching child
+                if (node.children.containsKey(c)) {
+                    nextNodes.add(node.children.get(c));
+                }
+            }
+        }
+
+        if (nextNodes.isEmpty()) return false;
+        currentNodes = nextNodes;
+    }
+
+    // check if any node in final set is end of word
+    return currentNodes.stream()
+                       .anyMatch(n -> n.isEndOfWord);
+}
+```
+
+---
+
+## Trace BFS on ".ad"
+
+```
+word = ".ad"
+currentNodes = {root}
+
+char='.':
+  root has children: b,d,m
+  nextNodes = {b-node, d-node, m-node}
+
+char='a':
+  b-node has 'a'? YES → add ba-node
+  d-node has 'a'? YES → add da-node
+  m-node has 'a'? YES → add ma-node
+  nextNodes = {ba-node, da-node, ma-node}
+
+char='d':
+  ba-node has 'd'? YES → add bad-node
+  da-node has 'd'? YES → add dad-node
+  ma-node has 'd'? YES → add mad-node
+  nextNodes = {bad-node, dad-node, mad-node}
+
+check isEndOfWord:
+  bad-node.isEndOfWord = true → return true ✓
+```
+
+---
+
+## Why DFS is better
+
+```
+BFS:
+  tracks ALL possible nodes at each level
+  needs HashSet of nodes → extra memory
+  processes ALL paths even after finding answer
+  O(n × 26^k) worst case where k = wildcards
+
+DFS:
+  goes one path at a time
+  returns true IMMEDIATELY when found
+  short-circuits — stops as soon as answer found
+  O(26^k) worst case but stops early
+
+For search problems → DFS wins because of early exit
+```
+
+---
+
+## Both are valid in interview
+
+```
+BFS approach:
+  ✓ intuitive — level by level
+  ✓ iterative — no recursion
+  ✗ no early exit
+  ✗ extra memory for node sets
+
+DFS approach:
+  ✓ early exit on first match
+  ✓ less memory — just call stack
+  ✗ recursive
+```
+
+**Say in interview:**
+*"I can solve this with BFS tracking all possible nodes at each level, or DFS which short-circuits on first match. I'll use DFS for efficiency."*
+
+---
+
+## DFS solution
+
+```java
+class WordDictionary {
+    private TrieNode root = new TrieNode();
+
+    public void addWord(String word) {
+        TrieNode node = root;
+        for (char c : word.toCharArray()) {
+            node.children.computeIfAbsent(c, k -> new TrieNode());
+            node = node.children.get(c);
+        }
+        node.isEndOfWord = true;
+    }
+
+    public boolean search(String word) {
+        return dfs(root, word, 0);
+    }
+
+    private boolean dfs(TrieNode node, String word, int index) {
+        // base case — processed all chars
+        if (index == word.length()) {
+            return node.isEndOfWord;
+        }
+
+        char c = word.charAt(index);
+
+        if (c == '.') {
+            // try ALL children
+            for (TrieNode child : node.children.values()) {
+                if (dfs(child, word, index + 1)) return true;
+            }
+            return false;
+
+        } else {
+            // follow exact char
+            if (!node.children.containsKey(c)) return false;
+            return dfs(node.children.get(c), word, index + 1);
+        }
+    }
+}
+```
+
+---
+
+## Trace DFS on ".ad"
+
+```
+dfs(root, ".ad", 0)
+  c='.' → try ALL children of root: b,d,m
+
+  dfs(b-node, ".ad", 1)
+    c='a' → b-node has 'a'? YES
+    dfs(ba-node, ".ad", 2)
+      c='d' → ba-node has 'd'? YES
+      dfs(bad-node, ".ad", 3)
+        index==length → isEndOfWord? YES → return true ✓
+
+  → true found! return true immediately ← early exit ✓
+  never even tries d-node and m-node
+```
+
+---
+
+## BFS vs DFS — when to use in general
+
+```
+BFS:
+  shortest path
+  level-order traversal
+  "minimum steps to reach X"
+
+DFS:
+  explore all paths
+  find IF something exists
+  backtracking problems
+  early exit on first match ← this problem
+```
+
+---
+
+LC 211 ✅ done. Ready for **Kill Process** next?
+
