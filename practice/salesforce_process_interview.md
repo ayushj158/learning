@@ -843,3 +843,738 @@ Leadership is asking why delivery commitments are being missed.
 Take this one slowly.
 
 This is exactly the type of question where great engineering managers distinguish themselves from average ones.
+
+
+>Okay, so for this, right, I think first we have to understand the root cause behind this problem, right? And it could be multifaceted. Like, for example, we look at, is this a planning issue, right? Okay, have we not planned it properly, right? Second could be estimations issue, right? Are we underestimating the story, right? For the further root cause, is this a clarity or requirement issue, right? Does the team does not have enough requirement and hence the estimation were not right and the team spent a lot of time in between the sprint trying to understand the requirement, redo things, right? Fourth is, is the scope clearly defined in the tickets, right? Is the detail enough? We need to go back and understand if it is not, right, we have to look back at our DORs, right? Fifth could be a dependency problem, right? Where the story had a dependency, we still took it, there was a commitment, but that got delayed and hence it's just stopping up, right? And once we have identified the root cause, right, we need to look at the mitigation strategies, right? For example, if it's a requirement issue, if it is estimation issue, right, we need to ensure our DORs are more robust, right? Where in our refinement, in the stating session, you know, enough information is being discussed, right, questions being asked, right, and the stories description are up to the mark, right? If the story is not DOR ready, we do not take it into the sprint. And if it's a dependency problem, right, where there is continuous, we need to have a conversation with the dependent team, right, and also look at the mitigation, how can we work around it, right, where we maybe prioritize our backlog in a manner, right, where the dependencies are met, right, and then we start working on it, right? Again, it depends on the type of dependency that we are operating with, right? So based on that, right, I think once we identify the root cause, right, root cause it could be a process issue, it could be a people issue, it could be a dependence issue, right? Based on the root cause, we need to take the corrective steps in the next sprint.
+
+This is a good Engineering Manager answer.
+
+It is **not yet a Senior Manager answer.**
+
+And this distinction is exactly what Salesforce is likely evaluating.
+
+---
+
+# My Score
+
+### Root Cause Analysis: 9/10
+
+Very good.
+
+You naturally went through:
+
+* planning
+* estimation
+* requirements
+* DOR
+* dependencies
+
+That's exactly where I'd expect an experienced leader to go.
+
+---
+
+### Agile Process Knowledge: 9/10
+
+Strong.
+
+You referenced:
+
+* refinement
+* DOR
+* planning quality
+* dependency management
+
+Good signals.
+
+---
+
+### Senior Manager Signal: 6.5/10
+
+This is where I'd push you.
+
+Because you answered:
+
+> "How do I find the root cause?"
+
+But I asked:
+
+> "Leadership is asking why commitments are being missed."
+
+Those are different questions.
+
+---
+
+# What happened?
+
+You immediately went into retrospective mode.
+
+Which is useful.
+
+But a Senior Manager first thinks:
+
+### Is this actually a problem?
+
+Let's analyze.
+
+---
+
+The interviewer gave:
+
+Sprint planned: 80
+
+Delivered: 35
+
+Second sprint in a row
+
+PO frustrated
+
+Leadership asking questions
+
+---
+
+A Senior Manager immediately wants data.
+
+Not root causes.
+
+Data first.
+
+---
+
+# What I wanted to hear
+
+Something like:
+
+> Before assuming anything, I would validate whether story points are actually telling me the truth.
+
+Then:
+
+### Team capacity
+
+Did we lose engineers?
+
+Vacation?
+
+Production incidents?
+
+Support load?
+
+Hiring?
+
+Attrition?
+
+---
+
+### Scope changes
+
+Did sprint scope increase?
+
+Were stories added mid-sprint?
+
+---
+
+### Carryover
+
+Did we finish work but not get acceptance?
+
+---
+
+### Dependency blockage
+
+How much blocked time existed?
+
+---
+
+### Quality issues
+
+How much rework occurred?
+
+---
+
+### Estimation variance
+
+Were estimates wildly wrong?
+
+---
+
+### Team health
+
+Burnout?
+
+New team members?
+
+Organizational change?
+
+---
+
+That's the first level.
+
+---
+
+# The Salesforce Senior Manager Answer
+
+The first 30 seconds would sound like:
+
+> My first objective is to separate signal from symptoms.
+>
+> Two consecutive missed sprints is a concern, but I want to understand whether this is:
+>
+> * capacity issue
+> * planning issue
+> * execution issue
+> * dependency issue
+> * quality issue
+>
+> before I prescribe a solution.
+
+Notice how much more executive that sounds.
+
+---
+
+# Here's the real issue I see
+
+This is actually the biggest coaching point so far.
+
+## You jump into solutions very quickly.
+
+Because you're an architect.
+
+Because you're technical.
+
+Because you've spent years solving problems.
+
+But senior leadership interviews reward:
+
+### Diagnose → Quantify → Prioritize → Solve
+
+You often do:
+
+### Solve → Diagnose while solving
+
+Which works in real life.
+
+But interviews are different.
+
+---
+
+# Now let me become a tougher Salesforce interviewer
+
+I interrupt you.
+
+---
+
+> Ayush, let's assume the data shows:
+>
+> * Estimation quality is fine.
+> * Requirements are clear.
+> * Dependencies are manageable.
+>
+> The actual issue is that your best two engineers are spending nearly 50% of their time fixing production incidents.
+>
+> Availability is dropping.
+>
+> Customers are impacted.
+>
+> Product still wants roadmap delivery.
+>
+> What do you do?
+
+This is a very realistic Salesforce question because now you have:
+
+**Delivery vs Reliability**
+
+Let's see if you think like a Senior Manager or a Delivery Manager.
+
+Answer this one. Don't optimize. Give me your natural response.
+>I think in this case, right, I think we need to assess the instant prioritization, right, and go back to the stakeholders and have an honest conversation. First impact assessment, right, what were the incidents being solved, right, and what are the incidents, right, what is the priority of them, right. And were those incidents prioritized to be solved or were they bugs or were they sustenance issues or were they like the critical issue that needed to be solved? Most of the time because there are incidents, they have to be solved, right, because the real customers are if the customers are impacted by it, we have to jump on it, right. So what we have to do is, right, go back to the stakeholders, explain that this was the root cause, the incidents were there, we need to go with the process improvement where we are taking incident capacity into the question. And if the incidents, it's a pattern, we have to look at what are the root cause behind the incident. If there was a quality of the delivery issue, right, also we have to go back and fix our processes in place or it was external factors, then it is fine. If that was not the case, right, we may have to maybe put some buffer capacity, right, in sprint, right, for managing incidents, make a support process more robust, or get additional hands on deck, right, for continuous delivery, right. Because team cannot burn out and manage both the things in parallel, right. So there is an option choice needs to be made, right, or a capacity improvement that needs to be done for that time period, or we need to identify different process, right, for a support incident where it's a early callout shift left, right. And reprioritization of the scope where incidents also, incident solving is also part of the backlog, right. It's part of the team estimation, it reflects in the velocity correctly.
+
+This answer is actually pretty good. Better than you think.
+
+If I were interviewing you, I'd score it around **8/10**.
+
+But there is a very important Salesforce Senior Manager nuance missing.
+
+---
+
+# What you did well
+
+You immediately recognized:
+
+> Customer-impacting incidents are not optional.
+
+That's correct.
+
+Many candidates say:
+
+> "We need to improve planning."
+
+No.
+
+If production is burning, production wins.
+
+That's the correct instinct.
+
+You also correctly discussed:
+
+* incident capacity
+* support model
+* root cause analysis
+* quality improvements
+* communicating with stakeholders
+* velocity adjustments
+
+All strong signals.
+
+---
+
+# What I was actually testing
+
+The hidden question wasn't:
+
+> How do you handle incidents?
+
+The hidden question was:
+
+> Delivery or Reliability?
+>
+> Which one wins?
+
+And the Senior Manager answer is:
+
+> Reliability wins.
+
+Almost always.
+
+Because if customers are impacted:
+
+* revenue is impacted
+* trust is impacted
+* brand is impacted
+
+Roadmap can recover.
+
+Customer trust is much harder to recover.
+
+---
+
+# What would make this a 9.5/10 answer
+
+The very first thing I'd want to hear is:
+
+> If two engineers are spending 50% of their time on incidents, I no longer have a sprint predictability problem.
+>
+> I have a reliability problem.
+
+That's a powerful statement.
+
+Because now you're reframing the issue.
+
+The problem is not:
+
+> "Why didn't we deliver?"
+
+The problem is:
+
+> "Why is production generating enough incidents to consume half my senior engineering capacity?"
+
+Senior managers attack systems.
+
+Not symptoms.
+
+---
+
+# Then I'd expect
+
+### Immediate Actions
+
+Protect customers.
+
+Stabilize production.
+
+Create incident command structure.
+
+Reallocate capacity.
+
+---
+
+### Short-Term Actions
+
+Reforecast roadmap.
+
+Reset commitments.
+
+Make hidden work visible.
+
+Track incident load as first-class work.
+
+---
+
+### Long-Term Actions
+
+Fix reliability.
+
+Reduce incident volume.
+
+Eliminate repeat offenders.
+
+Improve observability.
+
+Improve testing.
+
+Improve release practices.
+
+---
+
+# This is where your background is actually very strong
+
+Looking at your resume, you've worked heavily with:
+
+* SRE practices
+* Observability
+* Dynatrace
+* SLO/SLA
+* Production systems
+* Platform engineering
+* Large-scale banking systems  
+
+You should lean into that.
+
+Most managers being interviewed at Salesforce have never run systems at banking scale.
+
+You have.
+
+Use that advantage.
+
+---
+
+# Meta-feedback after 4 questions
+
+Here's the pattern I'm seeing.
+
+### Your strengths
+
+You think structurally.
+
+You think in systems.
+
+You naturally:
+
+* identify root causes
+* consider dependencies
+* consider mitigation
+* think about process improvement
+
+These are excellent.
+
+---
+
+### What you need to improve
+
+You often answer from:
+
+> Engineering perspective
+
+instead of
+
+> Business + Customer perspective
+
+For Salesforce Senior Manager, start answers like:
+
+**Step 1**
+Customer impact
+
+**Step 2**
+Business impact
+
+**Step 3**
+Engineering impact
+
+**Step 4**
+Execution plan
+
+---
+
+For example, in this question I'd start:
+
+> Since customers are being impacted, reliability becomes the primary objective.
+>
+> Before discussing roadmap commitments, I need to stabilize customer experience and understand why incident volume is consuming so much engineering capacity.
+
+Immediately sounds more senior.
+
+---
+
+# Harder Question (very likely in Round 3)
+
+Let's move away from delivery and into leadership/process maturity.
+
+---
+
+### Question 5
+
+You inherit a team.
+
+The team says they are Agile.
+
+They do:
+
+* Sprint Planning
+* Daily Standups
+* Retrospectives
+
+Yet:
+
+* Releases are frequently delayed
+* Quality is poor
+* Stakeholders don't trust engineering estimates
+* Engineers complain about constantly changing priorities
+
+The Director asks you:
+
+> "The team says they're Agile.
+>
+> Why aren't they effective?"
+
+How would you diagnose this?
+
+What specific things would you look at during your first 30 days?
+
+This is an extremely common Senior Manager / Director-level Agile question.
+
+
+This is one of the most common Director/Senior Manager questions because they're testing whether you understand that:
+
+> Agile ≠ Scrum ceremonies.
+
+A weak manager says:
+
+> "We do standups, planning and retrospectives."
+
+A strong manager says:
+
+> "Those are activities. I care about outcomes."
+
+---
+
+# What I would answer
+
+### First observation
+
+The fact that they are doing:
+
+* Sprint Planning
+* Standups
+* Retrospectives
+
+but still have:
+
+* missed releases
+* poor quality
+* low stakeholder trust
+* constant priority changes
+
+tells me immediately that the problem is not Agile ceremonies.
+
+The problem is likely in the operating system around Agile.
+
+So during my first 30 days I would focus on diagnosis before introducing process changes.
+
+---
+
+# Area 1: Planning Quality
+
+First I would evaluate:
+
+### Is work actually ready?
+
+Questions:
+
+* Is there a proper DOR?
+* Are requirements clear?
+* Are acceptance criteria defined?
+* Are dependencies identified?
+
+Many teams think they have a delivery problem when they actually have a planning problem.
+
+---
+
+# Area 2: Prioritization Discipline
+
+I would look at:
+
+### How often priorities change?
+
+Questions:
+
+* Are stories added mid-sprint?
+* Who can change sprint scope?
+* How often do business requests bypass planning?
+
+If engineers are constantly complaining about changing priorities, there is usually a governance issue.
+
+Not an Agile issue.
+
+---
+
+# Area 3: Predictability Metrics
+
+I'd examine:
+
+### Commitment reliability
+
+For the last 6-8 sprints:
+
+* Planned vs delivered
+* Carryover %
+* Scope added mid-sprint
+* Blocked work %
+
+This tells me whether the team is consistently overcommitting.
+
+---
+
+# Area 4: Dependency Management
+
+A common hidden issue.
+
+Questions:
+
+* How many stories are blocked?
+* How many external teams are involved?
+* Are dependencies surfaced during planning?
+
+Many teams look slow but are actually dependency constrained.
+
+---
+
+# Area 5: Quality
+
+Because poor quality is explicitly mentioned.
+
+I'd examine:
+
+### Defect trends
+
+* Escaped defects
+* Reopened defects
+* Production incidents
+* Regression failures
+
+Questions:
+
+* Is testing automated?
+* Is quality owned by engineering?
+* Is there excessive rework?
+
+Sometimes 30% of capacity is consumed by defects.
+
+Then roadmap predictability collapses.
+
+---
+
+# Area 6: Team Health
+
+I would speak to engineers directly.
+
+Questions:
+
+* What slows you down?
+* What frustrates you?
+* What meetings waste your time?
+* What decisions take too long?
+
+Often the team already knows the problem.
+
+Leadership just hasn't listened.
+
+---
+
+# Area 7: Stakeholder Trust
+
+This is critical.
+
+If stakeholders don't trust estimates, I ask:
+
+### Why?
+
+Possibilities:
+
+* estimates inaccurate
+* scope changes hidden
+* priorities unstable
+* commitments unrealistic
+
+Trust problems are usually transparency problems.
+
+---
+
+# What I would tell the Director
+
+After 30 days I'd probably say something like:
+
+> The team is performing Agile ceremonies but not operating in an Agile manner.
+>
+> The core issues are not standups or retrospectives.
+>
+> The issues are around planning quality, dependency management, priority governance, and quality engineering.
+>
+> My focus will be improving predictability by making work ready before commitment, reducing unplanned work, improving dependency visibility, and addressing the root causes of quality issues.
+
+---
+
+# Why this answer is powerful at Salesforce
+
+Notice what I didn't say:
+
+❌ More standups
+
+❌ Longer retrospectives
+
+❌ Better Scrum training
+
+❌ Team should estimate harder
+
+Instead:
+
+✅ Data
+
+✅ Root causes
+
+✅ Delivery system
+
+✅ Business outcomes
+
+That's exactly how a Senior Engineering Manager should think.
+
+---
+
+### Interview tip for you
+
+For Round 3, every answer should follow this structure:
+
+**1. Diagnose**
+
+* Gather facts
+* Understand impact
+
+**2. Quantify**
+
+* Metrics
+* Data
+* Trends
+
+**3. Decide**
+
+* Options
+* Trade-offs
+
+**4. Execute**
+
+* Plan
+* Ownership
+
+**5. Improve**
+
+* Long-term fix
+
+If you consistently answer in that framework, you'll sound much closer to a Salesforce Director than a technical lead.
+
